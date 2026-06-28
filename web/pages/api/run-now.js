@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { token } = req.body || {};
+  const { token, phraseIds, companyIds } = req.body || {};
   const user = await getUserByToken(token);
   if (!user) {
     return res.status(404).json({ error: "Invalid token" });
@@ -31,6 +31,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Run-now is not configured on the server" });
   }
 
+  const inputs = { user_id: user.id };
+  if (Array.isArray(phraseIds) && phraseIds.length > 0) {
+    inputs.phrase_ids = phraseIds.join(",");
+  }
+  if (Array.isArray(companyIds) && companyIds.length > 0) {
+    inputs.company_ids = companyIds.join(",");
+  }
+
   try {
     const dispatchRes = await fetch(
       `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
@@ -41,7 +49,7 @@ export default async function handler(req, res) {
           Accept: "application/vnd.github+json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ref: "main", inputs: { user_id: user.id } }),
+        body: JSON.stringify({ ref: "main", inputs }),
       }
     );
 

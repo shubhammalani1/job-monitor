@@ -103,6 +103,10 @@ export default function Dashboard() {
   });
   const [platformMessage, setPlatformMessage] = useState("");
   const [platformError, setPlatformError] = useState("");
+  const [selectedPhraseIds, setSelectedPhraseIds] = useState([]);
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
+  const [targetedRunLoading, setTargetedRunLoading] = useState(false);
+  const [targetedRunError, setTargetedRunError] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -435,6 +439,39 @@ export default function Dashboard() {
     return remainingMs > 0 ? Math.ceil(remainingMs / 60000) : 0;
   }
 
+  function togglePhraseSelection(id) {
+    setSelectedPhraseIds((ids) => (ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]));
+  }
+
+  function toggleCompanySelection(id) {
+    setSelectedCompanyIds((ids) => (ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]));
+  }
+
+  async function runSelectedOnly() {
+    setTargetedRunLoading(true);
+    setTargetedRunError("");
+    try {
+      const res = await fetch("/api/run-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, phraseIds: selectedPhraseIds, companyIds: selectedCompanyIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTargetedRunError(data.error || "Failed to trigger run");
+      } else {
+        flashSaved(`Run triggered for ${selectedPhraseIds.length} phrase(s) and ${selectedCompanyIds.length} company(ies)`);
+        setSelectedPhraseIds([]);
+        setSelectedCompanyIds([]);
+        loadAll();
+      }
+    } catch (e) {
+      setTargetedRunError(e.message);
+    } finally {
+      setTargetedRunLoading(false);
+    }
+  }
+
   async function addPhrase(e) {
     e.preventDefault();
     if (!newPhrase.trim()) return;
@@ -678,13 +715,47 @@ export default function Dashboard() {
 
         {activeTab === "search" && (
           <>
+            {(selectedPhraseIds.length > 0 || selectedCompanyIds.length > 0) && (
+              <section className={styles.section} style={{ position: "sticky", top: 10, zIndex: 5 }}>
+                <p className={styles.subtitle} style={{ margin: 0, marginBottom: 8 }}>
+                  {selectedPhraseIds.length} phrase(s), {selectedCompanyIds.length} company(ies) selected
+                </p>
+                <button type="button" onClick={runSelectedOnly} disabled={targetedRunLoading || cooldownRemainingMinutes() > 0}>
+                  {targetedRunLoading
+                    ? "Triggering..."
+                    : cooldownRemainingMinutes() > 0
+                    ? `Wait ${cooldownRemainingMinutes()} min`
+                    : "Run selected only"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPhraseIds([]);
+                    setSelectedCompanyIds([]);
+                  }}
+                >
+                  Clear selection
+                </button>
+                {targetedRunError && <div className={styles.error} style={{ marginTop: 8 }}>{targetedRunError}</div>}
+              </section>
+            )}
+
             <section className={styles.section}>
               <h2>Search phrases</h2>
-              <p className={styles.subtitle}>Phrases JSearch will look for, 3x a day.</p>
+              <p className={styles.subtitle}>
+                Phrases JSearch will look for, on schedule. Check a few and use "Run selected only" above to test
+                just those without running everything.
+              </p>
               <ul className={styles.list}>
                 {phrases.map((p) => (
                   <li key={p.id} className={styles.listItem}>
                     <span style={{ opacity: p.active ? 1 : 0.4 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPhraseIds.includes(p.id)}
+                        onChange={() => togglePhraseSelection(p.id)}
+                        style={{ marginRight: 8 }}
+                      />
                       {p.phrase} {p.location ? `— ${p.location}` : ""}
                     </span>
                     <span>
@@ -711,6 +782,12 @@ export default function Dashboard() {
                 {companies.map((c) => (
                   <li key={c.id} className={styles.listItem}>
                     <span style={{ opacity: c.active ? 1 : 0.4 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCompanyIds.includes(c.id)}
+                        onChange={() => toggleCompanySelection(c.id)}
+                        style={{ marginRight: 8 }}
+                      />
                       {c.name} {c.careers_url ? `— ${c.careers_url}` : ""}
                     </span>
                     <span>
