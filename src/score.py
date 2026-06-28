@@ -20,7 +20,7 @@ Education:
 - Target market: {target_location}. Open to: {target_roles}
 - Hard avoids: {hard_avoids}
 - Salary floor: {salary_floor_amount} {salary_floor_currency}/month
-
+{feedback_section}
 Job details:
 Title: {title}
 Company: {company_name}
@@ -52,10 +52,39 @@ Salary inference guide (since most postings don't show salary):
 Above floor likely if: senior/leadership title + reputable company in the target industry
 Above floor uncertain if: mid-level title at an unknown company
 Below floor likely if: junior title, or a company type unrelated to the candidate's experience
+
+If a "Past feedback" section is present above, treat it as the candidate's revealed
+preferences and weigh it alongside the stated profile - if this job closely resembles
+something they liked, that supports a higher score; if it closely resembles something
+they skipped, that supports a lower score, even if the stated profile alone would have
+scored it differently. Don't overweight a single example, but a consistent pattern across
+several liked or skipped jobs should meaningfully move the score.
 """
 
 
-def _format_profile_prompt(profile: dict, job: dict) -> str:
+def _format_feedback_section(feedback: dict | None) -> str:
+    if not feedback:
+        return ""
+
+    liked = feedback.get("liked") or []
+    disliked = feedback.get("disliked") or []
+    if not liked and not disliked:
+        return ""
+
+    lines = ["\nPast feedback from this candidate (jobs they've acted on before):"]
+    if liked:
+        lines.append("Liked (marked interested/applied):")
+        for j in liked:
+            lines.append(f"- {j.get('title')} at {j.get('company_name')}")
+    if disliked:
+        lines.append("Disliked (marked skip):")
+        for j in disliked:
+            lines.append(f"- {j.get('title')} at {j.get('company_name')}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _format_profile_prompt(profile: dict, job: dict, feedback: dict | None = None) -> str:
     background = profile.get("background") or []
     education = profile.get("education") or []
     target_roles = profile.get("target_roles") or []
@@ -74,6 +103,7 @@ def _format_profile_prompt(profile: dict, job: dict) -> str:
         hard_avoids=", ".join(hard_avoids) or "None specified",
         salary_floor_amount=profile.get("salary_floor_amount") or "Not specified",
         salary_floor_currency=profile.get("salary_floor_currency") or "",
+        feedback_section=_format_feedback_section(feedback),
         title=job.get("title") or "Not provided",
         company_name=job.get("company_name") or "Not provided",
         description=raw_data.get("job_description") or "Not provided",
@@ -82,14 +112,15 @@ def _format_profile_prompt(profile: dict, job: dict) -> str:
     )
 
 
-def score_job(job_dict: dict, profile: dict, anthropic_api_key: str) -> dict:
-    """Calls Claude (using the user's own API key) to score a job against their profile.
+def score_job(job_dict: dict, profile: dict, anthropic_api_key: str, feedback: dict | None = None) -> dict:
+    """Calls Claude (using the user's own API key) to score a job against their profile,
+    plus their revealed preferences from past interested/applied/skip actions if provided.
     Returns {score, reasoning, salary_likely_above_floor}. Returns score=0 on any failure."""
     try:
         if not anthropic_api_key:
             raise RuntimeError("user has no anthropic_api_key configured")
 
-        prompt = _format_profile_prompt(profile, job_dict)
+        prompt = _format_profile_prompt(profile, job_dict, feedback)
         client = anthropic.Anthropic(api_key=anthropic_api_key)
         response = client.messages.create(
             model=CLAUDE_MODEL,

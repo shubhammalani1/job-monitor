@@ -10,6 +10,7 @@ from careers import scrape_company_careers
 from dedupe import filter_new_jobs, save_jobs
 from score import score_job
 from notify import send_slack_notification
+from feedback import get_feedback_examples
 
 SCORE_THRESHOLD = 70
 
@@ -85,8 +86,11 @@ def run_for_user(user: dict) -> None:
         if not anthropic_api_key:
             print(f"WARNING: user '{user.get('name')}' has no anthropic_api_key configured - jobs will not be scored")
 
+        feedback = get_feedback_examples(user_id)
+        print(f"Loaded feedback: {len(feedback['liked'])} liked, {len(feedback['disliked'])} disliked past jobs")
+
         for job in new_jobs:
-            result = score_job(job, profile, anthropic_api_key)
+            result = score_job(job, profile, anthropic_api_key, feedback)
             job["claude_score"] = result["score"]
             job["claude_reasoning"] = result["reasoning"]
             job["salary_likely_above_floor"] = result["salary_likely_above_floor"]
