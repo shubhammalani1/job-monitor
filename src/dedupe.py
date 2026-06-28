@@ -19,14 +19,29 @@ def generate_fingerprint(title: str, company_name: str) -> str:
 
 
 def filter_new_jobs(jobs_list: list[dict], user_id: str) -> tuple[list[dict], int]:
-    """Returns (new_jobs, seen_count) by checking fingerprints against this user's seen_jobs rows."""
+    """Returns (new_jobs, seen_count) by checking fingerprints against this user's seen_jobs rows.
+
+    Also collapses duplicate fingerprints within jobs_list itself (e.g. the same posting
+    surfaced by two overlapping search phrases in the same run) - otherwise the same job
+    would get scored by Claude more than once before the save step ever sees it.
+    """
     if not jobs_list:
         return [], 0
 
     for job in jobs_list:
         job["fingerprint"] = generate_fingerprint(job.get("title"), job.get("company_name"))
 
-    fingerprints = [job["fingerprint"] for job in jobs_list]
+    deduped_within_batch = {}
+    intra_batch_dupes = 0
+    for job in jobs_list:
+        fp = job["fingerprint"]
+        if fp in deduped_within_batch:
+            intra_batch_dupes += 1
+        else:
+            deduped_within_batch[fp] = job
+    unique_jobs = list(deduped_within_batch.values())
+
+    fingerprints = list(deduped_within_batch.keys())
 
     try:
         supabase = get_supabase()
@@ -42,8 +57,9 @@ def filter_new_jobs(jobs_list: list[dict], user_id: str) -> tuple[list[dict], in
         print(f"ERROR: filter_new_jobs failed to query seen_jobs for user {user_id}: {e}")
         existing_fingerprints = set()
 
-    new_jobs = [job for job in jobs_list if job["fingerprint"] not in existing_fingerprints]
-    seen_count = len(jobs_list) - len(new_jobs)
+    new_jobs = [job for job in unique_jobs if job["fingerprint"] not in existing_fingerprints]
+    already_seen_count = len(unique_jobs) - len(new_jobs)
+    seen_count = already_seen_count + intra_batch_dupes
     return new_jobs, seen_count
 
 
