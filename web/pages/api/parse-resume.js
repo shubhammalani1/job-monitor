@@ -1,5 +1,6 @@
 import { getSupabaseAdmin, getUserByToken } from "../../lib/supabaseAdmin";
 import { extractTextFromFile } from "../../lib/resumeExtract";
+import { parseClaudeJson } from "../../lib/parseClaudeJson";
 
 export const config = {
   api: {
@@ -73,8 +74,8 @@ export default async function handler(req, res) {
     }
 
     const anthropicData = await anthropicRes.json();
-    const text = anthropicData.content?.[0]?.text?.trim() || "{}";
-    const parsed = JSON.parse(text);
+    const text = anthropicData.content?.[0]?.text || "{}";
+    const parsed = parseClaudeJson(text);
 
     return res.status(200).json({ ok: true, profile: parsed });
   } catch (e) {

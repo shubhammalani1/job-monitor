@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, getUserByToken } from "../../lib/supabaseAdmin";
+import { parseClaudeJson } from "../../lib/parseClaudeJson";
 
 const MIN_REASONS_NEEDED = 3;
 const MAX_REASONS_CONSIDERED = 20;
@@ -65,8 +66,8 @@ export default async function handler(req, res) {
     }
 
     const anthropicData = await anthropicRes.json();
-    const text = anthropicData.content?.[0]?.text?.trim() || "{}";
-    const parsed = JSON.parse(text);
+    const text = anthropicData.content?.[0]?.text || "{}";
+    const parsed = parseClaudeJson(text);
 
     return res.status(200).json({
       hasPattern: !!parsed.has_pattern,

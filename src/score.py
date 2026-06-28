@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import time
 
 import anthropic
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 CALL_DELAY_SECONDS = 1
+
+
+def _parse_json_response(text: str) -> dict:
+    """Claude is instructed to return raw JSON, but sometimes wraps it in markdown
+    code fences anyway - strip those before parsing instead of failing outright."""
+    text = text.strip()
+    fence_match = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```$", text, re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1).strip()
+    return json.loads(text)
 
 SYSTEM_PROMPT = (
     "You are a job relevance scorer. Return ONLY valid JSON, no preamble, no markdown."
@@ -159,7 +170,7 @@ def score_job(job_dict: dict, profile: dict, anthropic_api_key: str, feedback: d
         )
 
         text = response.content[0].text.strip()
-        parsed = json.loads(text)
+        parsed = _parse_json_response(text)
 
         return {
             "score": int(parsed.get("score", 0)),
