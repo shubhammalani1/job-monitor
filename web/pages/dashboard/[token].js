@@ -84,6 +84,9 @@ export default function Dashboard() {
   const [addJobSuggestion, setAddJobSuggestion] = useState(null);
   const [needsManualEntry, setNeedsManualEntry] = useState(false);
   const [addJobLoading, setAddJobLoading] = useState(false);
+  const [patternResult, setPatternResult] = useState(null);
+  const [patternLoading, setPatternLoading] = useState(false);
+  const [patternError, setPatternError] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -227,6 +230,44 @@ export default function Dashboard() {
       body: JSON.stringify({ token, profile }),
     });
     flashSaved("Profile saved");
+  }
+
+  async function checkSkipPatterns() {
+    setPatternLoading(true);
+    setPatternError("");
+    setPatternResult(null);
+    try {
+      const res = await fetch("/api/suggest-avoids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPatternError(data.error || "Failed to check for patterns");
+        return;
+      }
+      setPatternResult(data);
+    } catch (err) {
+      setPatternError(err.message);
+    } finally {
+      setPatternLoading(false);
+    }
+  }
+
+  async function acceptPatternSuggestion() {
+    const updatedProfile = {
+      ...profile,
+      hard_avoids: [...(profile.hard_avoids || []), patternResult.suggestedAvoid],
+    };
+    setProfile(updatedProfile);
+    await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, profile: updatedProfile }),
+    });
+    setPatternResult(null);
+    flashSaved(`Added "${patternResult.suggestedAvoid}" to your hard avoids`);
   }
 
   async function saveKeys(e) {
@@ -580,7 +621,39 @@ export default function Dashboard() {
         )}
 
         {activeTab === "profile" && (
-          <section className={styles.section}>
+          <>
+            <section className={styles.section}>
+              <h2>Spot a pattern in what you skip?</h2>
+              <p className={styles.subtitle}>
+                Looks at jobs you've skipped with a reason given, and checks whether they share a
+                theme worth adding to your hard avoids below.
+              </p>
+              <button type="button" onClick={checkSkipPatterns} disabled={patternLoading}>
+                {patternLoading ? "Checking..." : "Check my skipped jobs for patterns"}
+              </button>
+              {patternError && <div className={styles.error} style={{ marginTop: 10 }}>{patternError}</div>}
+              {patternResult && !patternResult.hasPattern && (
+                <p className={styles.subtitle} style={{ marginTop: 10, marginBottom: 0 }}>
+                  {patternResult.message || "No clear recurring pattern found yet."}
+                </p>
+              )}
+              {patternResult && patternResult.hasPattern && (
+                <div className={styles.toast} style={{ display: "block", marginTop: 12 }}>
+                  <div style={{ marginBottom: 6 }}>{patternResult.explanation}</div>
+                  <div>
+                    Add "{patternResult.suggestedAvoid}" to your hard avoids?{" "}
+                    <button type="button" onClick={acceptPatternSuggestion}>
+                      Yes, add it
+                    </button>
+                    <button type="button" onClick={() => setPatternResult(null)}>
+                      No thanks
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className={styles.section}>
             <h2>Your profile</h2>
             <p className={styles.subtitle}>This is what every job gets scored against.</p>
             <form onSubmit={saveProfile} className={styles.form}>
@@ -665,7 +738,8 @@ export default function Dashboard() {
                 Save profile
               </button>
             </form>
-          </section>
+            </section>
+          </>
         )}
 
         {activeTab === "settings" && (
