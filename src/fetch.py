@@ -1,22 +1,25 @@
+from __future__ import annotations
+
 import time
 import requests
-
-from config import JSEARCH_API_KEY
 
 JSEARCH_URL = "https://api.openwebninja.com/jsearch/search-v2"
 PHRASE_DELAY_SECONDS = 2
 
 
-def fetch_jobs_for_phrase(phrase: str, location: str) -> list[dict]:
+def fetch_jobs_for_phrase(phrase: str, location: str, jsearch_api_key: str) -> list[dict]:
     """Calls JSearch API for a phrase/location and returns normalized job dicts.
-    Returns [] on any error."""
+    Returns [] on any error (including a missing api key)."""
     try:
+        if not jsearch_api_key:
+            raise RuntimeError("no jsearch_api_key configured")
+
         params = {
             "query": f"{phrase} in {location}",
             "country": "ae",
             "date_posted": "3days",
         }
-        headers = {"x-api-key": JSEARCH_API_KEY}
+        headers = {"x-api-key": jsearch_api_key}
         response = requests.get(JSEARCH_URL, params=params, headers=headers, timeout=30)
         response.raise_for_status()
         data = response.json()

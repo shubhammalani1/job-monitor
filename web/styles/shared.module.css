@@ -500,3 +500,18 @@
   color: #6b6e80;
   font-size: 14px;
 }
+
+.page :global(details) {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.page :global(details ol) {
+  padding-left: 20px;
+  margin: 4px 0 0 0;
+}
+
+.page :global(details li) {
+  margin-bottom: 4px;
+}

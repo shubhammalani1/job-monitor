@@ -4,7 +4,16 @@ import datetime
 import json
 import os
 
-from config import get_active_users, get_active_phrases, get_active_companies, get_supabase
+from config import (
+    get_active_users,
+    get_active_phrases,
+    get_active_companies,
+    get_supabase,
+    get_app_settings,
+    get_effective_jsearch_key,
+    reset_jsearch_usage_if_due,
+    increment_jsearch_usage,
+)
 from fetch import fetch_jobs_for_phrase
 from careers import scrape_company_careers
 from dedupe import filter_new_jobs, save_jobs
@@ -40,11 +49,18 @@ def update_run_log(run_id: str | None, **fields) -> None:
         print(f"ERROR: failed to update run log {run_id}: {e}")
 
 
-def run_for_user(user: dict) -> None:
+def run_for_user(
+    user: dict,
+    app_settings: dict,
+    jsearch_budget: dict,
+    phrase_ids: list[str] | None,
+    company_ids: list[str] | None,
+) -> None:
     user_id = user["id"]
     profile = user.get("profile") or {}
-    anthropic_api_key = user.get("anthropic_api_key")
+    anthropic_api_key = user.get("anthropic_api_key") or app_settings.get("anthropic_api_key")
     slack_webhook_url = user.get("slack_webhook_url")
+    jsearch_api_key = get_effective_jsearch_key(app_settings)
 
     run_id = create_run_log(user_id)
     print(f"--- Run started for user '{user.get('name')}' ({user_id}), run_id={run_id} ---")
@@ -53,20 +69,29 @@ def run_for_user(user: dict) -> None:
     companies_checked = 0
 
     try:
-        phrases = get_active_phrases(user_id)
-        companies = get_active_companies(user_id)
+        phrases = get_active_phrases(user_id, phrase_ids)
+        companies = get_active_companies(user_id, company_ids)
         print(f"Loaded {len(phrases)} active phrases, {len(companies)} active companies")
 
         # Fetch phase
         all_jobs = []
 
         for phrase_row in phrases:
+            if jsearch_budget["remaining"] <= 0:
+                print(
+                    f"WARNING: JSearch quota cap reached ({app_settings.get('jsearch_quota_limit')} "
+                    f"requests this period) - skipping remaining phrase fetches"
+                )
+                break
+
             phrase = phrase_row.get("phrase")
             location = phrase_row.get("location") or "Dubai, UAE"
             print(f"Fetching jobs for phrase: '{phrase}' in '{location}'")
-            jobs = fetch_jobs_for_phrase(phrase, location)
+            jobs = fetch_jobs_for_phrase(phrase, location, jsearch_api_key)
             all_jobs.extend(jobs)
             phrases_run += 1
+            jsearch_budget["remaining"] -= 1
+            increment_jsearch_usage(1)
 
         for company_row in companies:
             company_name = company_row.get("name")
@@ -147,14 +172,50 @@ def run_for_user(user: dict) -> None:
         )
 
 
+def _is_scheduled_run_time(run_times: list[str]) -> bool:
+    """True if the current UTC hour matches one of the configured run times.
+    The cron heartbeat fires every hour, so matching on the hour is enough granularity."""
+    current_hour = datetime.datetime.now(datetime.timezone.utc).hour
+    configured_hours = set()
+    for t in run_times or []:
+        try:
+            configured_hours.add(int(t.split(":")[0]))
+        except (ValueError, IndexError):
+            continue
+    return current_hour in configured_hours
+
+
 def main():
     target_user_id = os.environ.get("TARGET_USER_ID") or None
+    phrase_ids_raw = os.environ.get("TARGET_PHRASE_IDS") or ""
+    company_ids_raw = os.environ.get("TARGET_COMPANY_IDS") or ""
+    phrase_ids = [p.strip() for p in phrase_ids_raw.split(",") if p.strip()] or None
+    company_ids = [c.strip() for c in company_ids_raw.split(",") if c.strip()] or None
+    is_on_demand = bool(target_user_id or phrase_ids or company_ids)
+
     print("=== Job monitor run started ===" + (f" (target user: {target_user_id})" if target_user_id else ""))
+
+    app_settings = get_app_settings()
+    app_settings = reset_jsearch_usage_if_due(app_settings)
+
+    if app_settings.get("paused") and not is_on_demand:
+        print("Pipeline is paused (platform setting) - skipping this scheduled run")
+        return
+
+    if not is_on_demand and not _is_scheduled_run_time(app_settings.get("run_times")):
+        print(f"Not a configured run time (run_times={app_settings.get('run_times')}) - skipping this heartbeat")
+        return
+
+    quota_limit = app_settings.get("jsearch_quota_limit") or 200
+    calls_used = app_settings.get("jsearch_calls_this_period") or 0
+    jsearch_budget = {"remaining": max(quota_limit - calls_used, 0)}
+    print(f"JSearch quota: {calls_used}/{quota_limit} used this period, {jsearch_budget['remaining']} remaining")
+
     users = get_active_users(target_user_id)
     print(f"Loaded {len(users)} active users")
 
     for user in users:
-        run_for_user(user)
+        run_for_user(user, app_settings, jsearch_budget, phrase_ids, company_ids)
 
     print("=== Job monitor run completed for all users ===")
 

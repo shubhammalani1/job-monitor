@@ -88,9 +88,26 @@ export default function Dashboard() {
   const [patternLoading, setPatternLoading] = useState(false);
   const [patternError, setPatternError] = useState("");
 
+  const [platformStatus, setPlatformStatus] = useState(null);
+  const [adminToken, setAdminToken] = useState(null);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+  const [newPinInput, setNewPinInput] = useState("");
+  const [platformForm, setPlatformForm] = useState({
+    anthropic_api_key: "",
+    jsearch_api_key: "",
+    paused: false,
+    run_times: "",
+    jsearch_quota_limit: 200,
+  });
+  const [platformMessage, setPlatformMessage] = useState("");
+  const [platformError, setPlatformError] = useState("");
+
   useEffect(() => {
     if (!token) return;
     loadAll();
+    loadPlatformStatus();
   }, [token]);
 
   async function loadAll() {
@@ -285,6 +302,107 @@ export default function Dashboard() {
     setSlackWebhook("");
     flashSaved("Keys saved");
     loadAll();
+  }
+
+  async function loadPlatformStatus() {
+    try {
+      const res = await fetch("/api/admin/settings");
+      const data = await res.json();
+      if (res.ok) {
+        setPlatformStatus(data);
+        setPlatformForm((f) => ({
+          ...f,
+          paused: data.paused,
+          run_times: (data.run_times || []).join(", "),
+          jsearch_quota_limit: data.jsearch_quota_limit,
+        }));
+      }
+    } catch {
+      // platform status is non-critical, fail silently
+    }
+  }
+
+  async function submitPin() {
+    setPinLoading(true);
+    setPinError("");
+    try {
+      const res = await fetch("/api/admin/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pinInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPinError(data.error || "Failed to verify PIN");
+        return;
+      }
+      setAdminToken(data.adminToken);
+      setPinInput("");
+    } catch (err) {
+      setPinError(err.message);
+    } finally {
+      setPinLoading(false);
+    }
+  }
+
+  async function submitNewPin() {
+    setPinLoading(true);
+    setPinError("");
+    try {
+      const res = await fetch("/api/admin/set-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPin: newPinInput, currentPin: pinInput || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPinError(data.error || "Failed to set PIN");
+        return;
+      }
+      setNewPinInput("");
+      setPinInput("");
+      flashSaved("PIN set");
+      loadPlatformStatus();
+    } catch (err) {
+      setPinError(err.message);
+    } finally {
+      setPinLoading(false);
+    }
+  }
+
+  async function savePlatformSettings() {
+    setPlatformError("");
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminToken,
+          anthropic_api_key: platformForm.anthropic_api_key || undefined,
+          jsearch_api_key: platformForm.jsearch_api_key || undefined,
+          paused: platformForm.paused,
+          run_times: platformForm.run_times
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+          jsearch_quota_limit: parseInt(platformForm.jsearch_quota_limit, 10) || 200,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPlatformError(data.error || "Failed to save platform settings");
+        return;
+      }
+      setPlatformForm((f) => ({ ...f, anthropic_api_key: "", jsearch_api_key: "" }));
+      flashSaved("Platform settings saved");
+      loadPlatformStatus();
+    } catch (err) {
+      setPlatformError(err.message);
+    }
+  }
+
+  function lockPlatformSettings() {
+    setAdminToken(null);
   }
 
   async function runNow() {
@@ -743,36 +861,170 @@ export default function Dashboard() {
         )}
 
         {activeTab === "settings" && (
-          <section className={styles.section}>
-            <h2>Your API keys</h2>
-            <p className={styles.subtitle}>
-              Anthropic key: <strong>{user.has_anthropic_key ? "set" : "not set"}</strong>. Slack webhook:{" "}
-              <strong>{user.has_slack_webhook ? "set" : "not set"}</strong>.
-            </p>
-            <form onSubmit={saveKeys} className={styles.form}>
-              <label>
-                Anthropic API key
-                <input
-                  type="password"
-                  placeholder={user.has_anthropic_key ? "•••••••• (leave blank to keep)" : "sk-ant-..."}
-                  value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
-                />
-              </label>
-              <label>
-                Slack webhook URL
-                <input
-                  type="password"
-                  placeholder={user.has_slack_webhook ? "•••••••• (leave blank to keep)" : "https://hooks.slack.com/..."}
-                  value={slackWebhook}
-                  onChange={(e) => setSlackWebhook(e.target.value)}
-                />
-              </label>
-              <button type="submit" style={{ alignSelf: "flex-start" }}>
-                Save keys
-              </button>
-            </form>
-          </section>
+          <>
+            <section className={styles.section}>
+              <h2>Where to find each key</h2>
+              <details>
+                <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 14 }}>
+                  Anthropic API key - click for steps
+                </summary>
+                <ol className={styles.subtitle} style={{ marginTop: 8 }}>
+                  <li>Go to console.anthropic.com and sign in (or create an account)</li>
+                  <li>Click "API Keys" in the left sidebar</li>
+                  <li>Click "Create Key", give it any name</li>
+                  <li>Copy the key (starts with sk-ant-...) and paste it below - it's only shown once</li>
+                </ol>
+              </details>
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 14 }}>
+                  Slack webhook URL - click for steps
+                </summary>
+                <ol className={styles.subtitle} style={{ marginTop: 8 }}>
+                  <li>Go to api.slack.com/apps and click "Create New App" (From scratch)</li>
+                  <li>Name it anything, pick your workspace</li>
+                  <li>Click "Incoming Webhooks" in the left menu, toggle it on</li>
+                  <li>Click "Add New Webhook to Workspace", choose the channel you want alerts in</li>
+                  <li>Copy the URL (starts with https://hooks.slack.com/...) and paste it below</li>
+                </ol>
+              </details>
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 14 }}>
+                  JSearch API key - click for steps
+                </summary>
+                <ol className={styles.subtitle} style={{ marginTop: 8 }}>
+                  <li>This one's currently shared and managed centrally - you don't need your own.</li>
+                  <li>If that changes later, you'd sign up at the JSearch/OpenWebNinja site and grab a key the same way.</li>
+                </ol>
+              </details>
+            </section>
+
+            <section className={styles.section}>
+              <h2>Your API keys</h2>
+              <p className={styles.subtitle}>
+                Anthropic key: <strong>{user.has_anthropic_key ? "set (yours)" : "not set - using shared key"}</strong>.
+                Slack webhook: <strong>{user.has_slack_webhook ? "set" : "not set"}</strong>.
+              </p>
+              <form onSubmit={saveKeys} className={styles.form}>
+                <label>
+                  Anthropic API key
+                  <input
+                    type="password"
+                    placeholder={user.has_anthropic_key ? "•••••••• (leave blank to keep)" : "sk-ant-... (optional - uses shared key if blank)"}
+                    value={anthropicKey}
+                    onChange={(e) => setAnthropicKey(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Slack webhook URL
+                  <input
+                    type="password"
+                    placeholder={user.has_slack_webhook ? "•••••••• (leave blank to keep)" : "https://hooks.slack.com/..."}
+                    value={slackWebhook}
+                    onChange={(e) => setSlackWebhook(e.target.value)}
+                  />
+                </label>
+                <button type="submit" style={{ alignSelf: "flex-start" }}>
+                  Save keys
+                </button>
+              </form>
+            </section>
+
+            <section className={styles.section}>
+              <h2>Platform settings (PIN protected)</h2>
+              <p className={styles.subtitle}>
+                Shared Anthropic/JSearch keys, run schedule, and the JSearch quota cap. Changes here affect everyone.
+              </p>
+
+              {platformStatus && (
+                <p className={styles.subtitle}>
+                  Status: {platformStatus.paused ? "Paused" : "Active"} · Run times: {(platformStatus.run_times || []).join(", ")} ·
+                  JSearch usage: {platformStatus.jsearch_calls_this_period}/{platformStatus.jsearch_quota_limit}
+                </p>
+              )}
+
+              {!adminToken && platformStatus && !platformStatus.pin_set && (
+                <div className={styles.form} style={{ maxWidth: 320 }}>
+                  <label>
+                    Set up a PIN (first time only)
+                    <input type="password" value={newPinInput} onChange={(e) => setNewPinInput(e.target.value)} placeholder="At least 4 characters" />
+                  </label>
+                  <button type="button" onClick={submitNewPin} disabled={pinLoading}>
+                    Set PIN
+                  </button>
+                  {pinError && <div className={styles.error}>{pinError}</div>}
+                </div>
+              )}
+
+              {!adminToken && platformStatus && platformStatus.pin_set && (
+                <div className={styles.form} style={{ maxWidth: 320 }}>
+                  <label>
+                    Enter PIN to unlock
+                    <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} />
+                  </label>
+                  <button type="button" onClick={submitPin} disabled={pinLoading}>
+                    Unlock
+                  </button>
+                  {pinError && <div className={styles.error}>{pinError}</div>}
+                </div>
+              )}
+
+              {adminToken && (
+                <div className={styles.form}>
+                  <label>
+                    Shared Anthropic API key
+                    <input
+                      type="password"
+                      placeholder={platformStatus?.has_anthropic_key ? "•••••••• (leave blank to keep)" : "sk-ant-..."}
+                      value={platformForm.anthropic_api_key}
+                      onChange={(e) => setPlatformForm({ ...platformForm, anthropic_api_key: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Shared JSearch API key
+                    <input
+                      type="password"
+                      placeholder={platformStatus?.has_jsearch_key ? "•••••••• (leave blank to keep)" : "uses GitHub secret if blank"}
+                      value={platformForm.jsearch_api_key}
+                      onChange={(e) => setPlatformForm({ ...platformForm, jsearch_api_key: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Run times (UTC, comma-separated, e.g. 04:00, 09:00, 16:00)
+                    <input
+                      value={platformForm.run_times}
+                      onChange={(e) => setPlatformForm({ ...platformForm, run_times: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={platformForm.paused}
+                      onChange={(e) => setPlatformForm({ ...platformForm, paused: e.target.checked })}
+                      style={{ marginRight: 8 }}
+                    />
+                    Pause the pipeline (scheduled runs only - manual "Run now" still works)
+                  </label>
+                  <label>
+                    JSearch monthly quota cap
+                    <input
+                      type="number"
+                      value={platformForm.jsearch_quota_limit}
+                      onChange={(e) => setPlatformForm({ ...platformForm, jsearch_quota_limit: e.target.value })}
+                    />
+                  </label>
+                  <div>
+                    <button type="button" onClick={savePlatformSettings}>
+                      Save platform settings
+                    </button>
+                    <button type="button" onClick={lockPlatformSettings}>
+                      Lock
+                    </button>
+                  </div>
+                  {platformError && <div className={styles.error}>{platformError}</div>}
+                </div>
+              )}
+            </section>
+          </>
         )}
       </div>
     </div>

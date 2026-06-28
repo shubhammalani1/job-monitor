@@ -68,36 +68,122 @@ def get_active_users(target_user_id: str | None = None) -> list[dict]:
         return []
 
 
-def get_active_phrases(user_id: str) -> list[dict]:
-    """Returns list of {phrase, location} dicts for this user's active search phrases."""
+def get_active_phrases(user_id: str, phrase_ids: list[str] | None = None) -> list[dict]:
+    """Returns list of {id, phrase, location} dicts for this user's active search phrases.
+
+    If phrase_ids is set, restricts to just those (used for targeted "run selected only"
+    triggers) without touching the active flag in the database.
+    """
     try:
         supabase = get_supabase()
-        response = (
+        query = (
             supabase.table("search_phrases")
-            .select("phrase, location")
+            .select("id, phrase, location")
             .eq("user_id", user_id)
             .eq("active", True)
-            .execute()
         )
+        if phrase_ids:
+            query = query.in_("id", phrase_ids)
+        response = query.execute()
         return response.data or []
     except Exception as e:
         print(f"ERROR: failed to load active phrases for user {user_id}: {e}")
         return []
 
 
-def get_active_companies(user_id: str) -> list[dict]:
-    """Returns list of {name, careers_url} dicts for this user's active companies."""
+def get_active_companies(user_id: str, company_ids: list[str] | None = None) -> list[dict]:
+    """Returns list of {id, name, careers_url} dicts for this user's active companies.
+
+    If company_ids is set, restricts to just those (used for targeted "run selected only"
+    triggers) without touching the active flag in the database.
+    """
     try:
         supabase = get_supabase()
-        response = (
+        query = (
             supabase.table("companies")
-            .select("name, careers_url")
+            .select("id, name, careers_url")
             .eq("user_id", user_id)
             .eq("active", True)
             .not_.is_("careers_url", "null")
-            .execute()
         )
+        if company_ids:
+            query = query.in_("id", company_ids)
+        response = query.execute()
         return response.data or []
     except Exception as e:
         print(f"ERROR: failed to load active companies for user {user_id}: {e}")
         return []
+
+
+DEFAULT_APP_SETTINGS = {
+    "paused": False,
+    "run_times": ["04:00", "09:00", "16:00"],
+    "anthropic_api_key": None,
+    "jsearch_api_key": None,
+    "jsearch_quota_limit": 200,
+    "jsearch_calls_this_period": 0,
+    "jsearch_period_reset_at": None,
+}
+
+
+def get_app_settings() -> dict:
+    """Returns the single shared platform settings row, with safe defaults on any failure
+    so a settings-table problem never blocks the whole pipeline from running."""
+    try:
+        supabase = get_supabase()
+        response = supabase.table("app_settings").select("*").eq("id", 1).single().execute()
+        return {**DEFAULT_APP_SETTINGS, **(response.data or {})}
+    except Exception as e:
+        print(f"ERROR: failed to load app_settings, using defaults: {e}")
+        return dict(DEFAULT_APP_SETTINGS)
+
+
+def get_effective_jsearch_key(settings: dict) -> str | None:
+    """Shared JSearch key from app_settings, falling back to the GitHub Actions
+    secret env var if the admin hasn't set one via the dashboard yet."""
+    return settings.get("jsearch_api_key") or JSEARCH_API_KEY
+
+
+def reset_jsearch_usage_if_due(settings: dict) -> dict:
+    """If the configured reset date has passed, zeroes the usage counter and pushes the
+    reset date forward 30 days. Returns the (possibly updated) settings dict."""
+    import datetime
+
+    reset_at = settings.get("jsearch_period_reset_at")
+    if not reset_at:
+        return settings
+
+    try:
+        reset_dt = datetime.datetime.fromisoformat(reset_at.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return settings
+
+    if datetime.datetime.now(datetime.timezone.utc) < reset_dt:
+        return settings
+
+    new_reset_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=30)).isoformat()
+    try:
+        supabase = get_supabase()
+        supabase.table("app_settings").update(
+            {"jsearch_calls_this_period": 0, "jsearch_period_reset_at": new_reset_at}
+        ).eq("id", 1).execute()
+        print(f"JSearch quota period reset. New reset date: {new_reset_at}")
+    except Exception as e:
+        print(f"ERROR: failed to reset jsearch usage period: {e}")
+        return settings
+
+    settings["jsearch_calls_this_period"] = 0
+    settings["jsearch_period_reset_at"] = new_reset_at
+    return settings
+
+
+def increment_jsearch_usage(count: int) -> None:
+    if count <= 0:
+        return
+    try:
+        supabase = get_supabase()
+        current = supabase.table("app_settings").select("jsearch_calls_this_period").eq("id", 1).single().execute()
+        new_count = (current.data or {}).get("jsearch_calls_this_period", 0) + count
+        supabase.table("app_settings").update({"jsearch_calls_this_period": new_count}).eq("id", 1).execute()
+    except Exception as e:
+        print(f"ERROR: failed to increment jsearch usage counter: {e}")

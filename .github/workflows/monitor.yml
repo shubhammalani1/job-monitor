@@ -1,14 +1,24 @@
 name: Job Monitor
 
 on:
+  # Runs every hour as a heartbeat - main.py itself decides whether this hour
+  # actually matches the configured run_times in app_settings, or whether the
+  # pipeline is paused. This is what makes schedule/pause controllable from the
+  # dashboard without ever editing this file again.
   schedule:
-    - cron: "0 4 * * *"
-    - cron: "0 9 * * *"
-    - cron: "0 16 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       user_id:
         description: "If set, only run for this user (used by on-demand dashboard runs)"
+        required: false
+        type: string
+      phrase_ids:
+        description: "Comma-separated search_phrases ids to restrict this run to (optional)"
+        required: false
+        type: string
+      company_ids:
+        description: "Comma-separated companies ids to restrict this run to (optional)"
         required: false
         type: string
 
@@ -32,4 +42,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TARGET_USER_ID: ${{ inputs.user_id }}
+          TARGET_PHRASE_IDS: ${{ inputs.phrase_ids }}
+          TARGET_COMPANY_IDS: ${{ inputs.company_ids }}
         run: python src/main.py
