@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 
 from config import get_supabase
+
+FUZZY_TITLE_SIMILARITY_THRESHOLD = 0.88
 
 
 def _normalize(text: str) -> str:
@@ -18,12 +21,36 @@ def generate_fingerprint(title: str, company_name: str) -> str:
     return combined[:64]
 
 
+def _title_similarity(title_a: str, title_b: str) -> float:
+    return SequenceMatcher(None, _normalize(title_a), _normalize(title_b)).ratio()
+
+
+def _is_fuzzy_duplicate(job: dict, against: list[dict]) -> bool:
+    """True if job's title is a near-match (same normalized company, similar title)
+    to anything in `against`. Catches the same posting re-titled slightly across
+    platforms (e.g. 'Sr. Product Manager' vs 'Senior Product Manager, Growth') that
+    the exact-fingerprint check misses."""
+    job_company = _normalize(job.get("company_name"))
+    job_title = job.get("title") or ""
+    for other in against:
+        if _normalize(other.get("company_name")) != job_company:
+            continue
+        if _title_similarity(job_title, other.get("title") or "") >= FUZZY_TITLE_SIMILARITY_THRESHOLD:
+            return True
+    return False
+
+
 def filter_new_jobs(jobs_list: list[dict], user_id: str) -> tuple[list[dict], int]:
     """Returns (new_jobs, seen_count) by checking fingerprints against this user's seen_jobs rows.
 
     Also collapses duplicate fingerprints within jobs_list itself (e.g. the same posting
     surfaced by two overlapping search phrases in the same run) - otherwise the same job
     would get scored by Claude more than once before the save step ever sees it.
+
+    After the exact-fingerprint pass, also runs a fuzzy title-similarity pass (same
+    company, near-identical title) against both the remaining batch and this user's
+    existing seen_jobs, to catch near-duplicate postings that differ only in minor
+    title wording across platforms.
     """
     if not jobs_list:
         return [], 0
@@ -57,9 +84,33 @@ def filter_new_jobs(jobs_list: list[dict], user_id: str) -> tuple[list[dict], in
         print(f"ERROR: filter_new_jobs failed to query seen_jobs for user {user_id}: {e}")
         existing_fingerprints = set()
 
-    new_jobs = [job for job in unique_jobs if job["fingerprint"] not in existing_fingerprints]
-    already_seen_count = len(unique_jobs) - len(new_jobs)
-    seen_count = already_seen_count + intra_batch_dupes
+    after_exact = [job for job in unique_jobs if job["fingerprint"] not in existing_fingerprints]
+    exact_dupes = len(unique_jobs) - len(after_exact)
+
+    try:
+        supabase = get_supabase()
+        existing_titles_response = (
+            supabase.table("seen_jobs")
+            .select("title, company_name")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        existing_titles = existing_titles_response.data or []
+    except Exception as e:
+        print(f"ERROR: filter_new_jobs failed to load existing titles for fuzzy check, user {user_id}: {e}")
+        existing_titles = []
+
+    new_jobs = []
+    fuzzy_dupes = 0
+    accepted_so_far = []
+    for job in after_exact:
+        if _is_fuzzy_duplicate(job, existing_titles) or _is_fuzzy_duplicate(job, accepted_so_far):
+            fuzzy_dupes += 1
+            continue
+        new_jobs.append(job)
+        accepted_so_far.append(job)
+
+    seen_count = intra_batch_dupes + exact_dupes + fuzzy_dupes
     return new_jobs, seen_count
 
 
