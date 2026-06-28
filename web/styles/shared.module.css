@@ -1,0 +1,185 @@
+.page {
+  min-height: 100vh;
+  background: #0f1115;
+  color: #e6e6e6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 40px 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.card {
+  max-width: 480px;
+  width: 100%;
+  background: #1a1d24;
+  border-radius: 12px;
+  padding: 32px;
+}
+
+.dashboard {
+  max-width: 720px;
+  width: 100%;
+}
+
+.subtitle {
+  color: #9a9fa8;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: #c4c8d0;
+  gap: 4px;
+}
+
+.form input,
+.form textarea {
+  background: #0f1115;
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e6e6e6;
+  font-size: 14px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+}
+.row label {
+  flex: 1;
+}
+
+.page :global(button) {
+  background: #4c7cf0;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-right: 6px;
+}
+.page :global(button:hover) {
+  background: #3a68db;
+}
+
+.error {
+  color: #f06464;
+  font-size: 13px;
+}
+
+.success {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.linkBox {
+  background: #0f1115;
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  padding: 10px;
+  word-break: break-all;
+  font-size: 13px;
+}
+
+.cta {
+  display: inline-block;
+  background: #4c7cf0;
+  color: white;
+  text-decoration: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.section {
+  background: #1a1d24;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+}
+
+.listItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2d35;
+  font-size: 14px;
+}
+
+.inlineForm {
+  display: flex;
+  gap: 8px;
+}
+.inlineForm input {
+  flex: 1;
+  background: #0f1115;
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #e6e6e6;
+  font-size: 14px;
+}
+
+.jobList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.jobItem {
+  padding: 12px 0;
+  border-bottom: 1px solid #2a2d35;
+}
+
+.jobHeader {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.jobHeader a {
+  color: #8fb4ff;
+}
+
+.score {
+  background: #2a2d35;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reasoning {
+  color: #9a9fa8;
+  font-size: 13px;
+  margin: 4px 0 0 0;
+}
+
+.toast {
+  background: #2c5e3f;
+  color: #b6f0c8;
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  display: inline-block;
+}
