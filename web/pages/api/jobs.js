@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     let query = supabase
       .from("seen_jobs")
       .select(
-        "id, title, company_name, claude_score, claude_reasoning, salary_likely_above_floor, status, job_url, date_posted, created_at",
+        "id, title, company_name, claude_score, claude_reasoning, salary_likely_above_floor, status, skip_reason, job_url, date_posted, created_at",
         { count: "exact" }
       )
       .eq("user_id", user.id);

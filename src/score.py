@@ -79,7 +79,9 @@ def _format_feedback_section(feedback: dict | None) -> str:
     if disliked:
         lines.append("Disliked (marked skip):")
         for j in disliked:
-            lines.append(f"- {j.get('title')} at {j.get('company_name')}")
+            reason = j.get("skip_reason")
+            suffix = f" (reason given: {reason})" if reason else ""
+            lines.append(f"- {j.get('title')} at {j.get('company_name')}{suffix}")
     lines.append("")
     return "\n".join(lines)
 

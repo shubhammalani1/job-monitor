@@ -73,6 +73,14 @@ export default function Dashboard() {
   const [savedMessage, setSavedMessage] = useState("");
   const [runningNow, setRunningNow] = useState(false);
   const [runNowError, setRunNowError] = useState("");
+  const [skipPromptId, setSkipPromptId] = useState(null);
+  const [skipReasonText, setSkipReasonText] = useState("");
+  const [newJobTitle, setNewJobTitle] = useState("");
+  const [newJobCompany, setNewJobCompany] = useState("");
+  const [newJobUrl, setNewJobUrl] = useState("");
+  const [newJobNotes, setNewJobNotes] = useState("");
+  const [addJobError, setAddJobError] = useState("");
+  const [addJobSuggestion, setAddJobSuggestion] = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -112,13 +120,75 @@ export default function Dashboard() {
     setJobsHasMore(!!data.hasMore);
   }
 
-  async function setJobStatus(jobId, status) {
+  async function setJobStatus(jobId, status, reason) {
     await fetch("/api/job-status", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, id: jobId, status }),
+      body: JSON.stringify({ token, id: jobId, status, reason }),
     });
     loadJobs(jobsPage, jobsStatusFilter);
+  }
+
+  function openSkipPrompt(jobId) {
+    setSkipPromptId(jobId);
+    setSkipReasonText("");
+  }
+
+  async function confirmSkip(jobId) {
+    await setJobStatus(jobId, "skip", skipReasonText);
+    setSkipPromptId(null);
+  }
+
+  async function addManualJob(e) {
+    e.preventDefault();
+    setAddJobError("");
+    try {
+      const res = await fetch("/api/add-job", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          title: newJobTitle,
+          company_name: newJobCompany,
+          job_url: newJobUrl || undefined,
+          notes: newJobNotes || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddJobError(data.error || "Failed to add job");
+        return;
+      }
+      setAddJobSuggestion({ phrase: data.suggestPhrase, company: data.suggestCompany });
+      setNewJobTitle("");
+      setNewJobCompany("");
+      setNewJobUrl("");
+      setNewJobNotes("");
+      flashSaved("Job added and marked interested");
+      loadJobs(0, jobsStatusFilter);
+    } catch (err) {
+      setAddJobError(err.message);
+    }
+  }
+
+  async function acceptPhraseSuggestion() {
+    await fetch("/api/phrases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, phrase: addJobSuggestion.phrase }),
+    });
+    setAddJobSuggestion({ ...addJobSuggestion, phrase: null });
+    loadAll();
+  }
+
+  async function acceptCompanySuggestion() {
+    await fetch("/api/companies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, name: addJobSuggestion.company }),
+    });
+    setAddJobSuggestion({ ...addJobSuggestion, company: null });
+    loadAll();
   }
 
   function changeStatusFilter(status) {
@@ -287,7 +357,43 @@ export default function Dashboard() {
         </div>
 
         {activeTab === "jobs" && (
-          <section className={styles.section}>
+          <>
+            <section className={styles.section}>
+              <h2>Found a job elsewhere?</h2>
+              <p className={styles.subtitle}>
+                Add it here and mark it interested - the tool can then suggest tracking that
+                title or company so it finds more like it automatically.
+              </p>
+              <form onSubmit={addManualJob} className={styles.inlineForm} style={{ flexWrap: "wrap" }}>
+                <input placeholder="Job title" value={newJobTitle} onChange={(e) => setNewJobTitle(e.target.value)} required />
+                <input placeholder="Company" value={newJobCompany} onChange={(e) => setNewJobCompany(e.target.value)} required />
+                <input placeholder="Link (optional)" value={newJobUrl} onChange={(e) => setNewJobUrl(e.target.value)} />
+                <button type="submit">Add job</button>
+              </form>
+              {addJobError && <div className={styles.error} style={{ marginTop: 10 }}>{addJobError}</div>}
+              {addJobSuggestion && (addJobSuggestion.phrase || addJobSuggestion.company) && (
+                <div className={styles.toast} style={{ display: "block", marginTop: 12 }}>
+                  {addJobSuggestion.phrase && (
+                    <div style={{ marginBottom: 6 }}>
+                      Track "{addJobSuggestion.phrase}" as a search phrase too?{" "}
+                      <button type="button" onClick={acceptPhraseSuggestion}>
+                        Yes, add it
+                      </button>
+                    </div>
+                  )}
+                  {addJobSuggestion.company && (
+                    <div>
+                      Track "{addJobSuggestion.company}" as a company too?{" "}
+                      <button type="button" onClick={acceptCompanySuggestion}>
+                        Yes, add it
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section className={styles.section}>
             <div className={styles.sectionHeadRow}>
               <h2>Jobs found ({jobsTotal})</h2>
             </div>
@@ -319,14 +425,33 @@ export default function Dashboard() {
                     )}
                   </div>
                   {j.claude_reasoning && <p className={styles.reasoning}>{j.claude_reasoning}</p>}
+                  {j.skip_reason && <p className={styles.reasoning}>Skip reason: {j.skip_reason}</p>}
                   <div className={styles.statusRow}>
                     <span className={styles.statusPill}>{j.status}</span>
-                    {["interested", "applied", "skip"].map((s) => (
+                    {["interested", "applied"].map((s) => (
                       <button key={s} type="button" disabled={j.status === s} onClick={() => setJobStatus(j.id, s)}>
                         {s}
                       </button>
                     ))}
+                    <button type="button" disabled={j.status === "skip"} onClick={() => openSkipPrompt(j.id)}>
+                      skip
+                    </button>
                   </div>
+                  {skipPromptId === j.id && (
+                    <div className={styles.inlineForm} style={{ marginTop: 10 }}>
+                      <input
+                        placeholder="Why skip this? (optional)"
+                        value={skipReasonText}
+                        onChange={(e) => setSkipReasonText(e.target.value)}
+                      />
+                      <button type="button" onClick={() => confirmSkip(j.id)}>
+                        Confirm skip
+                      </button>
+                      <button type="button" onClick={() => setSkipPromptId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
               {jobs.length === 0 && (
@@ -344,7 +469,8 @@ export default function Dashboard() {
                 Next
               </button>
             </div>
-          </section>
+            </section>
+          </>
         )}
 
         {activeTab === "search" && (

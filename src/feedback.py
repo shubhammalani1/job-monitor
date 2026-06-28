@@ -27,7 +27,7 @@ def get_feedback_examples(user_id: str) -> dict:
         )
         disliked_response = (
             supabase.table("seen_jobs")
-            .select("title, company_name")
+            .select("title, company_name, skip_reason")
             .eq("user_id", user_id)
             .eq("status", "skip")
             .order("created_at", desc=True)

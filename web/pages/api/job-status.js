@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { token, id, status } = req.body || {};
+  const { token, id, status, reason } = req.body || {};
   if (!id || !VALID_STATUSES.includes(status)) {
     return res.status(400).json({ error: "id and a valid status are required" });
   }
@@ -17,11 +17,16 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: "Invalid token" });
   }
 
+  const update = { status };
+  if (status === "skip") {
+    update.skip_reason = reason || null;
+  }
+
   try {
     const supabase = getSupabaseAdmin();
     const { error } = await supabase
       .from("seen_jobs")
-      .update({ status })
+      .update(update)
       .eq("id", id)
       .eq("user_id", user.id);
     if (error) throw error;
