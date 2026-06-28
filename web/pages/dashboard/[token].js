@@ -103,6 +103,10 @@ export default function Dashboard() {
   });
   const [platformMessage, setPlatformMessage] = useState("");
   const [platformError, setPlatformError] = useState("");
+  const [adminUsers, setAdminUsers] = useState(null);
+  const [adminUsersError, setAdminUsersError] = useState("");
+  const [adminUserActionError, setAdminUserActionError] = useState("");
+  const [revealedLinkIds, setRevealedLinkIds] = useState([]);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [resumeError, setResumeError] = useState("");
   const [selectedPhraseIds, setSelectedPhraseIds] = useState([]);
@@ -390,11 +394,64 @@ export default function Dashboard() {
       }
       setAdminToken(data.adminToken);
       setPinInput("");
+      loadAdminUsers(data.adminToken);
     } catch (err) {
       setPinError(err.message);
     } finally {
       setPinLoading(false);
     }
+  }
+
+  async function loadAdminUsers(tokenOverride) {
+    setAdminUsersError("");
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminToken: tokenOverride || adminToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminUsersError(data.error || "Failed to load users");
+        return;
+      }
+      setAdminUsers(data.users);
+    } catch (err) {
+      setAdminUsersError(err.message);
+    }
+  }
+
+  async function runAdminUserAction(userId, action, confirmMessage) {
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    setAdminUserActionError("");
+    try {
+      const res = await fetch("/api/admin/user-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminToken, userId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminUserActionError(data.error || "Action failed");
+        return;
+      }
+      if (action === "regenerate_token") {
+        setRevealedLinkIds((ids) => (ids.includes(userId) ? ids : [...ids, userId]));
+      }
+      loadAdminUsers();
+    } catch (err) {
+      setAdminUserActionError(err.message);
+    }
+  }
+
+  function toggleLinkReveal(userId) {
+    setRevealedLinkIds((ids) => (ids.includes(userId) ? ids.filter((id) => id !== userId) : [...ids, userId]));
+  }
+
+  function copyLink(accessToken) {
+    const link = `${window.location.origin}/dashboard/${accessToken}`;
+    navigator.clipboard.writeText(link);
+    flashSaved("Link copied");
   }
 
   async function submitNewPin() {
@@ -1160,6 +1217,88 @@ export default function Dashboard() {
                 </div>
               )}
             </section>
+
+            {adminToken && (
+              <section className={styles.section}>
+                <h2>All users</h2>
+                <p className={styles.subtitle}>
+                  Every account on this platform, with their private dashboard link. Treat links like
+                  passwords - anyone with one can edit that user's profile and keys.
+                </p>
+                {adminUsersError && <div className={styles.error}>{adminUsersError}</div>}
+                {adminUserActionError && <div className={styles.error} style={{ marginTop: 8 }}>{adminUserActionError}</div>}
+                <ul className={styles.list}>
+                  {(adminUsers || []).map((u) => (
+                    <li key={u.id} className={styles.listItem} style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                        <span style={{ opacity: u.active ? 1 : 0.4 }}>
+                          <strong>{u.name}</strong> {u.email ? `(${u.email})` : ""} {!u.active && "- inactive"}
+                          <br />
+                          <span className={styles.jobCompany}>
+                            {u.phrase_count} phrases · {u.company_count} companies · {u.job_count} jobs found
+                          </span>
+                        </span>
+                      </div>
+                      <div>
+                        {revealedLinkIds.includes(u.id) ? (
+                          <code className={styles.linkBox} style={{ display: "block", marginBottom: 8 }}>
+                            {`${typeof window !== "undefined" ? window.location.origin : ""}/dashboard/${u.access_token}`}
+                          </code>
+                        ) : null}
+                        <button type="button" onClick={() => toggleLinkReveal(u.id)}>
+                          {revealedLinkIds.includes(u.id) ? "Hide link" : "Show link"}
+                        </button>
+                        <button type="button" onClick={() => copyLink(u.access_token)}>
+                          Copy link
+                        </button>
+                        <button type="button" onClick={() => runAdminUserAction(u.id, "toggle_active")}>
+                          {u.active ? "Deactivate" : "Activate"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            runAdminUserAction(
+                              u.id,
+                              "regenerate_token",
+                              `Regenerate ${u.name}'s link? Their old link will stop working immediately.`
+                            )
+                          }
+                        >
+                          Regenerate link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            runAdminUserAction(
+                              u.id,
+                              "clear_data",
+                              `Clear all job history for ${u.name}? This deletes their seen jobs and run logs, but keeps their profile, phrases, and companies.`
+                            )
+                          }
+                        >
+                          Clear job data
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            runAdminUserAction(
+                              u.id,
+                              "delete",
+                              `Permanently delete ${u.name}'s account? This deletes everything - profile, phrases, companies, and job history. Cannot be undone.`
+                            )
+                          }
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                  {adminUsers && adminUsers.length === 0 && (
+                    <p className={styles.subtitle}>No users yet.</p>
+                  )}
+                </ul>
+              </section>
+            )}
           </>
         )}
       </div>
