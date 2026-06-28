@@ -11,6 +11,7 @@ from dedupe import filter_new_jobs, save_jobs
 from score import score_job
 from notify import send_slack_notification
 from feedback import get_feedback_examples
+from extract import enrich_description_if_thin
 
 SCORE_THRESHOLD = 70
 
@@ -81,6 +82,11 @@ def run_for_user(user: dict) -> None:
         new_jobs, dupes = filter_new_jobs(all_jobs, user_id)
         new_jobs_found = len(new_jobs)
         print(f"Found {total_found} jobs, {new_jobs_found} new, {dupes} already seen")
+
+        # Enrich phase - fetch full descriptions for jobs whose source only gave a thin one,
+        # so scoring (and future feedback) works off real content, not a title alone.
+        for job in new_jobs:
+            enrich_description_if_thin(job)
 
         # Score phase
         if not anthropic_api_key:

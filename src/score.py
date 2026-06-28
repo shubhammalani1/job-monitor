@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 import time
 
@@ -62,6 +63,21 @@ several liked or skipped jobs should meaningfully move the score.
 """
 
 
+def _days_ago(created_at: str | None) -> str:
+    if not created_at:
+        return ""
+    try:
+        created = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        days = (datetime.datetime.now(datetime.timezone.utc) - created).days
+        if days <= 0:
+            return " (today)"
+        if days == 1:
+            return " (1 day ago)"
+        return f" ({days} days ago)"
+    except (ValueError, TypeError):
+        return ""
+
+
 def _format_feedback_section(feedback: dict | None) -> str:
     if not feedback:
         return ""
@@ -71,17 +87,28 @@ def _format_feedback_section(feedback: dict | None) -> str:
     if not liked and not disliked:
         return ""
 
-    lines = ["\nPast feedback from this candidate (jobs they've acted on before):"]
+    lines = [
+        "\nPast feedback from this candidate (most recent first - weigh recent feedback "
+        "more heavily than older feedback, since preferences can shift over time):"
+    ]
     if liked:
         lines.append("Liked (marked interested/applied):")
         for j in liked:
-            lines.append(f"- {j.get('title')} at {j.get('company_name')}")
+            recency = _days_ago(j.get("created_at"))
+            lines.append(f"- {j.get('title')} at {j.get('company_name')}{recency}")
+            snippet = j.get("description_snippet")
+            if snippet:
+                lines.append(f"  Description excerpt: {snippet}")
     if disliked:
         lines.append("Disliked (marked skip):")
         for j in disliked:
+            recency = _days_ago(j.get("created_at"))
             reason = j.get("skip_reason")
-            suffix = f" (reason given: {reason})" if reason else ""
-            lines.append(f"- {j.get('title')} at {j.get('company_name')}{suffix}")
+            suffix = f" - reason given: {reason}" if reason else ""
+            lines.append(f"- {j.get('title')} at {j.get('company_name')}{recency}{suffix}")
+            snippet = j.get("description_snippet")
+            if snippet:
+                lines.append(f"  Description excerpt: {snippet}")
     lines.append("")
     return "\n".join(lines)
 
