@@ -24,10 +24,14 @@ a candidate profile using Claude, and notifies via Slack for high-scoring matche
 ## Adding target companies
 
 Add a company through the dashboard (or insert a row into `companies` with a `careers_url`).
-[`src/careers.py`](src/careers.py) automatically pulls jobs for any company on a **Greenhouse**
-(`boards.greenhouse.io/<token>`) or **Lever** (`jobs.lever.co/<token>`) board via their public
-JSON APIs - no per-company code needed for those. Any other careers URL is skipped with a log
-message until a custom scraper branch is added for it.
+[`src/careers.py`](src/careers.py) automatically pulls jobs for any company on:
+- **Greenhouse** (`boards.greenhouse.io/<token>`) via their public JSON API
+- **Lever** (`jobs.lever.co/<token>`) via their public JSON API
+- **Attrax** career sites (white-labelled per company, e.g. `careers.deliveryhero.com`,
+  detected by fetching the page and checking for Attrax's markup, then scraped directly)
+
+No per-company code is needed for any of those three. Any other careers URL is skipped with a
+log message until a custom scraper branch is added for it.
 
 ## GitHub Actions
 

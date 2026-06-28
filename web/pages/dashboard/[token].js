@@ -418,8 +418,9 @@ export default function Dashboard() {
             <button type="submit">Add company</button>
           </form>
           <p className={styles.subtitle}>
-            Works automatically for companies on Greenhouse (boards.greenhouse.io/...) or Lever
-            (jobs.lever.co/...) career pages. Other career pages aren't supported yet.
+            Works automatically for companies on Greenhouse (boards.greenhouse.io/...), Lever
+            (jobs.lever.co/...), or Attrax-powered career sites (e.g. careers.deliveryhero.com).
+            Other career pages aren't supported yet.
           </p>
         </section>
 
