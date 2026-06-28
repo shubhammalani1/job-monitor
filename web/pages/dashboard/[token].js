@@ -36,6 +36,10 @@ export default function Dashboard() {
   const [phrases, setPhrases] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [jobsPage, setJobsPage] = useState(0);
+  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsHasMore, setJobsHasMore] = useState(false);
+  const [jobsStatusFilter, setJobsStatusFilter] = useState("");
 
   const [anthropicKey, setAnthropicKey] = useState("");
   const [slackWebhook, setSlackWebhook] = useState("");
@@ -64,15 +68,39 @@ export default function Dashboard() {
     setUser(userData);
     setProfile({ ...EMPTY_PROFILE, ...userData.profile });
 
-    const [phrasesRes, companiesRes, jobsRes] = await Promise.all([
+    const [phrasesRes, companiesRes] = await Promise.all([
       fetch(`/api/phrases?token=${token}`),
       fetch(`/api/companies?token=${token}`),
-      fetch(`/api/jobs?token=${token}`),
     ]);
     setPhrases((await phrasesRes.json()).phrases || []);
     setCompanies((await companiesRes.json()).companies || []);
-    setJobs((await jobsRes.json()).jobs || []);
+    await loadJobs(0, jobsStatusFilter);
     setLoading(false);
+  }
+
+  async function loadJobs(page, statusFilter) {
+    const params = new URLSearchParams({ token, page: String(page) });
+    if (statusFilter) params.set("status", statusFilter);
+    const res = await fetch(`/api/jobs?${params.toString()}`);
+    const data = await res.json();
+    setJobs(data.jobs || []);
+    setJobsPage(data.page || 0);
+    setJobsTotal(data.total || 0);
+    setJobsHasMore(!!data.hasMore);
+  }
+
+  async function setJobStatus(jobId, status) {
+    await fetch("/api/job-status", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, id: jobId, status }),
+    });
+    loadJobs(jobsPage, jobsStatusFilter);
+  }
+
+  function changeStatusFilter(status) {
+    setJobsStatusFilter(status);
+    loadJobs(0, status);
   }
 
   function flashSaved(msg) {
@@ -390,13 +418,25 @@ export default function Dashboard() {
             <button type="submit">Add company</button>
           </form>
           <p className={styles.subtitle}>
-            Note: careers page scraping isn't built per-company yet — adding a company here registers
-            it, but it won't return jobs until a scraper is added for it.
+            Works automatically for companies on Greenhouse (boards.greenhouse.io/...) or Lever
+            (jobs.lever.co/...) career pages. Other career pages aren't supported yet.
           </p>
         </section>
 
         <section className={styles.section}>
-          <h2>Jobs found ({jobs.length})</h2>
+          <h2>Jobs found ({jobsTotal})</h2>
+          <div className={styles.filterRow}>
+            {["", "new", "interested", "applied", "skip", "closed"].map((s) => (
+              <button
+                key={s || "all"}
+                type="button"
+                onClick={() => changeStatusFilter(s)}
+                className={jobsStatusFilter === s ? styles.filterActive : styles.filterInactive}
+              >
+                {s || "all"}
+              </button>
+            ))}
+          </div>
           <ul className={styles.jobList}>
             {jobs.map((j) => (
               <li key={j.id} className={styles.jobItem}>
@@ -408,10 +448,32 @@ export default function Dashboard() {
                   <span>— {j.company_name}</span>
                 </div>
                 {j.claude_reasoning && <p className={styles.reasoning}>{j.claude_reasoning}</p>}
+                <div className={styles.statusRow}>
+                  <span className={styles.subtitle}>Status: {j.status}</span>
+                  {["interested", "applied", "skip"].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={j.status === s}
+                      onClick={() => setJobStatus(j.id, s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </li>
             ))}
             {jobs.length === 0 && <p className={styles.subtitle}>No jobs found yet. Check back after the next run.</p>}
           </ul>
+          <div className={styles.pagerRow}>
+            <button type="button" disabled={jobsPage === 0} onClick={() => loadJobs(jobsPage - 1, jobsStatusFilter)}>
+              Previous
+            </button>
+            <span className={styles.subtitle}>Page {jobsPage + 1}</span>
+            <button type="button" disabled={!jobsHasMore} onClick={() => loadJobs(jobsPage + 1, jobsStatusFilter)}>
+              Next
+            </button>
+          </div>
         </section>
       </div>
     </div>

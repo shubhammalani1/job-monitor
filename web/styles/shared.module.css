@@ -183,3 +183,49 @@
   margin-bottom: 16px;
   display: inline-block;
 }
+
+.filterRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filterActive {
+  background: #4c7cf0;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filterInactive {
+  background: transparent;
+  color: #9a9fa8;
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.statusRow button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.pagerRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}

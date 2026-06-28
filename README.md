@@ -23,8 +23,11 @@ a candidate profile using Claude, and notifies via Slack for high-scoring matche
 
 ## Adding target companies
 
-Insert rows into the `companies` table with a `careers_url`. Until a scraper is implemented
-for that company in [`src/careers.py`](src/careers.py), it will be skipped with a log message.
+Add a company through the dashboard (or insert a row into `companies` with a `careers_url`).
+[`src/careers.py`](src/careers.py) automatically pulls jobs for any company on a **Greenhouse**
+(`boards.greenhouse.io/<token>`) or **Lever** (`jobs.lever.co/<token>`) board via their public
+JSON APIs - no per-company code needed for those. Any other careers URL is skipped with a log
+message until a custom scraper branch is added for it.
 
 ## GitHub Actions
 
@@ -41,8 +44,8 @@ Add these as repository secrets under Settings → Secrets and variables → Act
 
 ## Pipeline stages
 
-1. **Fetch** — `fetch.py` queries JSearch per active search phrase; `careers.py` checks
-   company career pages (stubbed pending per-company scrapers).
+1. **Fetch** — `fetch.py` queries JSearch per active search phrase; `careers.py` pulls
+   directly from Greenhouse/Lever boards for tracked companies on those platforms.
 2. **Dedup** — `dedupe.py` fingerprints jobs by normalized title+company and filters out
    anything already in `seen_jobs`.
 3. **Score** — `score.py` sends each new job to Claude for a 0-100 relevance score against
