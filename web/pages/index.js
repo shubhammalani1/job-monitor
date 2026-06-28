@@ -29,14 +29,17 @@ export default function Home() {
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
-        <h1>Job Monitor</h1>
-        <p className={styles.subtitle}>
-          Get a private dashboard that watches the job market for you and scores
-          new postings against your profile, 3x a day.
-        </p>
+    <div className={styles.landingWrap}>
+      <div className={styles.heroBadge}>● Runs automatically, 3x a day</div>
+      <h1 className={styles.heroTitle}>
+        Job Monitor
+      </h1>
+      <p className={styles.subtitle} style={{ textAlign: "center", maxWidth: 380, margin: "0 auto 28px" }}>
+        Get a private dashboard that watches the job market for you and scores every new
+        posting against your own profile, automatically.
+      </p>
 
+      <div className={styles.card}>
         {!link && (
           <form onSubmit={handleSubmit} className={styles.form}>
             <label>
@@ -48,7 +51,7 @@ export default function Home() {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </label>
             {error && <div className={styles.error}>{error}</div>}
-            <button type="submit" disabled={loading}>
+            <button type="submit" disabled={loading} style={{ width: "100%", padding: "12px 16px" }}>
               {loading ? "Creating..." : "Create my dashboard"}
             </button>
           </form>
@@ -56,7 +59,9 @@ export default function Home() {
 
         {link && (
           <div className={styles.success}>
-            <p>Your private dashboard link (save this - it's the only way to access your account):</p>
+            <p className={styles.subtitle} style={{ margin: 0 }}>
+              Your private dashboard link — save this, it's the only way to access your account:
+            </p>
             <code className={styles.linkBox}>{link}</code>
             <a className={styles.cta} href={link}>
               Go to my dashboard →

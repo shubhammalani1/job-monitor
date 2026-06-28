@@ -15,6 +15,13 @@ const EMPTY_PROFILE = {
   salary_floor_currency: "",
 };
 
+const TABS = [
+  { id: "jobs", label: "Jobs" },
+  { id: "search", label: "Search setup" },
+  { id: "profile", label: "Profile" },
+  { id: "settings", label: "Settings" },
+];
+
 function listToText(list) {
   return (list || []).join("\n");
 }
@@ -25,10 +32,26 @@ function textToList(text) {
     .filter(Boolean);
 }
 
+function scoreClass(score) {
+  if (score >= 70) return styles.scoreHigh;
+  if (score >= 50) return styles.scoreMid;
+  return styles.scoreLow;
+}
+
+function formatDate(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return null;
+  }
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { token } = router.query;
 
+  const [activeTab, setActiveTab] = useState("jobs");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [user, setUser] = useState(null);
@@ -227,21 +250,17 @@ export default function Dashboard() {
     loadAll();
   }
 
-  if (loading) return <div className={styles.page}>Loading...</div>;
-  if (notFound) return <div className={styles.page}>Invalid or expired link.</div>;
+  if (loading) return <div className={styles.page}><div className={styles.dashboard}>Loading...</div></div>;
+  if (notFound) return <div className={styles.page}><div className={styles.dashboard}>Invalid or expired link.</div></div>;
 
   return (
     <div className={styles.page}>
       <div className={styles.dashboard}>
-        <h1>Welcome, {user.name}</h1>
-        {savedMessage && <div className={styles.toast}>{savedMessage}</div>}
-
-        <section className={styles.section}>
-          <h2>Run search now</h2>
-          <p className={styles.subtitle}>
-            Normally this runs automatically 3x/day. Use this to check right now instead of waiting
-            for the next scheduled run.
-          </p>
+        <div className={styles.topBar}>
+          <div className={styles.brand}>
+            <span className={styles.brandDot} />
+            Job Monitor
+          </div>
           <button type="button" onClick={runNow} disabled={runningNow || cooldownRemainingMinutes() > 0}>
             {runningNow
               ? "Triggering..."
@@ -249,233 +268,268 @@ export default function Dashboard() {
               ? `Wait ${cooldownRemainingMinutes()} min`
               : "Run now"}
           </button>
-          {runNowError && <div className={styles.error}>{runNowError}</div>}
-        </section>
+        </div>
 
-        <section className={styles.section}>
-          <h2>Your profile</h2>
-          <p className={styles.subtitle}>This is what every job gets scored against.</p>
-          <form onSubmit={saveProfile} className={styles.form}>
-            <label>
-              Current role
-              <input
-                value={profile.current_role}
-                onChange={(e) => setProfile({ ...profile, current_role: e.target.value })}
-              />
-            </label>
-            <label>
-              Current company
-              <input
-                value={profile.current_company}
-                onChange={(e) => setProfile({ ...profile, current_company: e.target.value })}
-              />
-            </label>
-            <label>
-              Location
-              <input
-                value={profile.location}
-                onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-              />
-            </label>
-            <label>
-              Background (one bullet per line)
-              <textarea
-                rows={5}
-                value={listToText(profile.background)}
-                onChange={(e) => setProfile({ ...profile, background: textToList(e.target.value) })}
-              />
-            </label>
-            <label>
-              Education (one per line)
-              <textarea
-                rows={2}
-                value={listToText(profile.education)}
-                onChange={(e) => setProfile({ ...profile, education: textToList(e.target.value) })}
-              />
-            </label>
-            <label>
-              Target roles (one per line, e.g. Strategy, Growth, Product)
-              <textarea
-                rows={3}
-                value={listToText(profile.target_roles)}
-                onChange={(e) => setProfile({ ...profile, target_roles: textToList(e.target.value) })}
-              />
-            </label>
-            <label>
-              Target location (e.g. Dubai/UAE)
-              <input
-                value={profile.target_location}
-                onChange={(e) => setProfile({ ...profile, target_location: e.target.value })}
-              />
-            </label>
-            <label>
-              Hard avoids (one per line)
-              <textarea
-                rows={3}
-                value={listToText(profile.hard_avoids)}
-                onChange={(e) => setProfile({ ...profile, hard_avoids: textToList(e.target.value) })}
-              />
-            </label>
-            <div className={styles.row}>
-              <label>
-                Salary floor amount
-                <input
-                  type="number"
-                  value={profile.salary_floor_amount}
-                  onChange={(e) => setProfile({ ...profile, salary_floor_amount: e.target.value })}
-                />
-              </label>
-              <label>
-                Currency
-                <input
-                  value={profile.salary_floor_currency}
-                  onChange={(e) => setProfile({ ...profile, salary_floor_currency: e.target.value })}
-                />
-              </label>
+        {savedMessage && <div className={styles.toast}>{savedMessage}</div>}
+        {runNowError && <div className={styles.error} style={{ marginBottom: 16 }}>{runNowError}</div>}
+
+        <div className={styles.tabRow}>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={activeTab === t.id ? styles.tabButtonActive : styles.tabButton}
+              onClick={() => setActiveTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "jobs" && (
+          <section className={styles.section}>
+            <div className={styles.sectionHeadRow}>
+              <h2>Jobs found ({jobsTotal})</h2>
             </div>
-            <button type="submit">Save profile</button>
-          </form>
-        </section>
-
-        <section className={styles.section}>
-          <h2>Your API keys</h2>
-          <p className={styles.subtitle}>
-            Stored encrypted at rest in our database. Anthropic key:{" "}
-            <strong>{user.has_anthropic_key ? "set" : "not set"}</strong>. Slack webhook:{" "}
-            <strong>{user.has_slack_webhook ? "set" : "not set"}</strong>.
-          </p>
-          <form onSubmit={saveKeys} className={styles.form}>
-            <label>
-              Anthropic API key
-              <input
-                type="password"
-                placeholder={user.has_anthropic_key ? "•••••••• (leave blank to keep)" : "sk-ant-..."}
-                value={anthropicKey}
-                onChange={(e) => setAnthropicKey(e.target.value)}
-              />
-            </label>
-            <label>
-              Slack webhook URL
-              <input
-                type="password"
-                placeholder={user.has_slack_webhook ? "•••••••• (leave blank to keep)" : "https://hooks.slack.com/..."}
-                value={slackWebhook}
-                onChange={(e) => setSlackWebhook(e.target.value)}
-              />
-            </label>
-            <button type="submit">Save keys</button>
-          </form>
-        </section>
-
-        <section className={styles.section}>
-          <h2>Search phrases</h2>
-          <ul className={styles.list}>
-            {phrases.map((p) => (
-              <li key={p.id} className={styles.listItem}>
-                <span style={{ opacity: p.active ? 1 : 0.4 }}>
-                  {p.phrase} {p.location ? `— ${p.location}` : ""}
-                </span>
-                <span>
-                  <button type="button" onClick={() => togglePhrase(p.id, p.active)}>
-                    {p.active ? "Pause" : "Resume"}
-                  </button>
-                  <button type="button" onClick={() => deletePhrase(p.id)}>
-                    Delete
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <form onSubmit={addPhrase} className={styles.inlineForm}>
-            <input placeholder="e.g. product manager" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)} />
-            <input placeholder="location (optional)" value={newLocation} onChange={(e) => setNewLocation(e.target.value)} />
-            <button type="submit">Add phrase</button>
-          </form>
-        </section>
-
-        <section className={styles.section}>
-          <h2>Companies to watch</h2>
-          <ul className={styles.list}>
-            {companies.map((c) => (
-              <li key={c.id} className={styles.listItem}>
-                <span style={{ opacity: c.active ? 1 : 0.4 }}>
-                  {c.name} {c.careers_url ? `— ${c.careers_url}` : ""}
-                </span>
-                <span>
-                  <button type="button" onClick={() => toggleCompany(c.id, c.active)}>
-                    {c.active ? "Pause" : "Resume"}
-                  </button>
-                  <button type="button" onClick={() => deleteCompany(c.id)}>
-                    Delete
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-          <form onSubmit={addCompany} className={styles.inlineForm}>
-            <input placeholder="Company name" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} />
-            <input placeholder="Careers page URL" value={newCompanyUrl} onChange={(e) => setNewCompanyUrl(e.target.value)} />
-            <button type="submit">Add company</button>
-          </form>
-          <p className={styles.subtitle}>
-            Works automatically for companies on Greenhouse (boards.greenhouse.io/...), Lever
-            (jobs.lever.co/...), or Attrax-powered career sites (e.g. careers.deliveryhero.com).
-            Other career pages aren't supported yet.
-          </p>
-        </section>
-
-        <section className={styles.section}>
-          <h2>Jobs found ({jobsTotal})</h2>
-          <div className={styles.filterRow}>
-            {["", "new", "interested", "applied", "skip", "closed"].map((s) => (
-              <button
-                key={s || "all"}
-                type="button"
-                onClick={() => changeStatusFilter(s)}
-                className={jobsStatusFilter === s ? styles.filterActive : styles.filterInactive}
-              >
-                {s || "all"}
+            <div className={styles.filterRow}>
+              {["", "new", "interested", "applied", "skip", "closed"].map((s) => (
+                <button
+                  key={s || "all"}
+                  type="button"
+                  onClick={() => changeStatusFilter(s)}
+                  className={jobsStatusFilter === s ? styles.filterActive : styles.filterInactive}
+                >
+                  {s || "all"}
+                </button>
+              ))}
+            </div>
+            <ul className={styles.jobList}>
+              {jobs.map((j) => (
+                <li key={j.id} className={styles.jobItem}>
+                  <div className={styles.jobHeader}>
+                    <span className={`${styles.scoreBadge} ${scoreClass(j.claude_score ?? 0)}`}>
+                      {j.claude_score ?? 0}
+                    </span>
+                    <a href={j.job_url} target="_blank" rel="noreferrer" className={styles.jobTitleLink}>
+                      {j.title}
+                    </a>
+                    <span className={styles.jobCompany}>{j.company_name}</span>
+                    {formatDate(j.date_posted) && (
+                      <span className={styles.jobCompany}>· {formatDate(j.date_posted)}</span>
+                    )}
+                  </div>
+                  {j.claude_reasoning && <p className={styles.reasoning}>{j.claude_reasoning}</p>}
+                  <div className={styles.statusRow}>
+                    <span className={styles.statusPill}>{j.status}</span>
+                    {["interested", "applied", "skip"].map((s) => (
+                      <button key={s} type="button" disabled={j.status === s} onClick={() => setJobStatus(j.id, s)}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              ))}
+              {jobs.length === 0 && (
+                <div className={styles.emptyState}>No jobs found yet. Check back after the next run.</div>
+              )}
+            </ul>
+            <div className={styles.pagerRow}>
+              <button type="button" disabled={jobsPage === 0} onClick={() => loadJobs(jobsPage - 1, jobsStatusFilter)}>
+                Previous
               </button>
-            ))}
-          </div>
-          <ul className={styles.jobList}>
-            {jobs.map((j) => (
-              <li key={j.id} className={styles.jobItem}>
-                <div className={styles.jobHeader}>
-                  <span className={styles.score}>{j.claude_score ?? 0}/100</span>
-                  <a href={j.job_url} target="_blank" rel="noreferrer">
-                    {j.title}
-                  </a>
-                  <span>— {j.company_name}</span>
-                </div>
-                {j.claude_reasoning && <p className={styles.reasoning}>{j.claude_reasoning}</p>}
-                <div className={styles.statusRow}>
-                  <span className={styles.subtitle}>Status: {j.status}</span>
-                  {["interested", "applied", "skip"].map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      disabled={j.status === s}
-                      onClick={() => setJobStatus(j.id, s)}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </li>
-            ))}
-            {jobs.length === 0 && <p className={styles.subtitle}>No jobs found yet. Check back after the next run.</p>}
-          </ul>
-          <div className={styles.pagerRow}>
-            <button type="button" disabled={jobsPage === 0} onClick={() => loadJobs(jobsPage - 1, jobsStatusFilter)}>
-              Previous
-            </button>
-            <span className={styles.subtitle}>Page {jobsPage + 1}</span>
-            <button type="button" disabled={!jobsHasMore} onClick={() => loadJobs(jobsPage + 1, jobsStatusFilter)}>
-              Next
-            </button>
-          </div>
-        </section>
+              <span className={styles.subtitle} style={{ margin: 0 }}>
+                Page {jobsPage + 1}
+              </span>
+              <button type="button" disabled={!jobsHasMore} onClick={() => loadJobs(jobsPage + 1, jobsStatusFilter)}>
+                Next
+              </button>
+            </div>
+          </section>
+        )}
+
+        {activeTab === "search" && (
+          <>
+            <section className={styles.section}>
+              <h2>Search phrases</h2>
+              <p className={styles.subtitle}>Phrases JSearch will look for, 3x a day.</p>
+              <ul className={styles.list}>
+                {phrases.map((p) => (
+                  <li key={p.id} className={styles.listItem}>
+                    <span style={{ opacity: p.active ? 1 : 0.4 }}>
+                      {p.phrase} {p.location ? `— ${p.location}` : ""}
+                    </span>
+                    <span>
+                      <button type="button" onClick={() => togglePhrase(p.id, p.active)}>
+                        {p.active ? "Pause" : "Resume"}
+                      </button>
+                      <button type="button" onClick={() => deletePhrase(p.id)}>
+                        Delete
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={addPhrase} className={styles.inlineForm}>
+                <input placeholder="e.g. product manager" value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)} />
+                <input placeholder="location (optional)" value={newLocation} onChange={(e) => setNewLocation(e.target.value)} />
+                <button type="submit">Add phrase</button>
+              </form>
+            </section>
+
+            <section className={styles.section}>
+              <h2>Companies to watch</h2>
+              <ul className={styles.list}>
+                {companies.map((c) => (
+                  <li key={c.id} className={styles.listItem}>
+                    <span style={{ opacity: c.active ? 1 : 0.4 }}>
+                      {c.name} {c.careers_url ? `— ${c.careers_url}` : ""}
+                    </span>
+                    <span>
+                      <button type="button" onClick={() => toggleCompany(c.id, c.active)}>
+                        {c.active ? "Pause" : "Resume"}
+                      </button>
+                      <button type="button" onClick={() => deleteCompany(c.id)}>
+                        Delete
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={addCompany} className={styles.inlineForm}>
+                <input placeholder="Company name" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} />
+                <input placeholder="Careers page URL" value={newCompanyUrl} onChange={(e) => setNewCompanyUrl(e.target.value)} />
+                <button type="submit">Add company</button>
+              </form>
+              <p className={styles.subtitle} style={{ marginTop: 12, marginBottom: 0 }}>
+                Works automatically for companies on Greenhouse (boards.greenhouse.io/...), Lever
+                (jobs.lever.co/...), or Attrax-powered career sites (e.g. careers.deliveryhero.com).
+                Other career pages aren't supported yet.
+              </p>
+            </section>
+          </>
+        )}
+
+        {activeTab === "profile" && (
+          <section className={styles.section}>
+            <h2>Your profile</h2>
+            <p className={styles.subtitle}>This is what every job gets scored against.</p>
+            <form onSubmit={saveProfile} className={styles.form}>
+              <label>
+                Current role
+                <input
+                  value={profile.current_role}
+                  onChange={(e) => setProfile({ ...profile, current_role: e.target.value })}
+                />
+              </label>
+              <label>
+                Current company
+                <input
+                  value={profile.current_company}
+                  onChange={(e) => setProfile({ ...profile, current_company: e.target.value })}
+                />
+              </label>
+              <label>
+                Location
+                <input
+                  value={profile.location}
+                  onChange={(e) => setProfile({ ...profile, location: e.target.value })}
+                />
+              </label>
+              <label>
+                Background (one bullet per line)
+                <textarea
+                  rows={5}
+                  value={listToText(profile.background)}
+                  onChange={(e) => setProfile({ ...profile, background: textToList(e.target.value) })}
+                />
+              </label>
+              <label>
+                Education (one per line)
+                <textarea
+                  rows={2}
+                  value={listToText(profile.education)}
+                  onChange={(e) => setProfile({ ...profile, education: textToList(e.target.value) })}
+                />
+              </label>
+              <label>
+                Target roles (one per line, e.g. Strategy, Growth, Product)
+                <textarea
+                  rows={3}
+                  value={listToText(profile.target_roles)}
+                  onChange={(e) => setProfile({ ...profile, target_roles: textToList(e.target.value) })}
+                />
+              </label>
+              <label>
+                Target location (e.g. Dubai/UAE)
+                <input
+                  value={profile.target_location}
+                  onChange={(e) => setProfile({ ...profile, target_location: e.target.value })}
+                />
+              </label>
+              <label>
+                Hard avoids (one per line)
+                <textarea
+                  rows={3}
+                  value={listToText(profile.hard_avoids)}
+                  onChange={(e) => setProfile({ ...profile, hard_avoids: textToList(e.target.value) })}
+                />
+              </label>
+              <div className={styles.row}>
+                <label>
+                  Salary floor amount
+                  <input
+                    type="number"
+                    value={profile.salary_floor_amount}
+                    onChange={(e) => setProfile({ ...profile, salary_floor_amount: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Currency
+                  <input
+                    value={profile.salary_floor_currency}
+                    onChange={(e) => setProfile({ ...profile, salary_floor_currency: e.target.value })}
+                  />
+                </label>
+              </div>
+              <button type="submit" style={{ alignSelf: "flex-start" }}>
+                Save profile
+              </button>
+            </form>
+          </section>
+        )}
+
+        {activeTab === "settings" && (
+          <section className={styles.section}>
+            <h2>Your API keys</h2>
+            <p className={styles.subtitle}>
+              Anthropic key: <strong>{user.has_anthropic_key ? "set" : "not set"}</strong>. Slack webhook:{" "}
+              <strong>{user.has_slack_webhook ? "set" : "not set"}</strong>.
+            </p>
+            <form onSubmit={saveKeys} className={styles.form}>
+              <label>
+                Anthropic API key
+                <input
+                  type="password"
+                  placeholder={user.has_anthropic_key ? "•••••••• (leave blank to keep)" : "sk-ant-..."}
+                  value={anthropicKey}
+                  onChange={(e) => setAnthropicKey(e.target.value)}
+                />
+              </label>
+              <label>
+                Slack webhook URL
+                <input
+                  type="password"
+                  placeholder={user.has_slack_webhook ? "•••••••• (leave blank to keep)" : "https://hooks.slack.com/..."}
+                  value={slackWebhook}
+                  onChange={(e) => setSlackWebhook(e.target.value)}
+                />
+              </label>
+              <button type="submit" style={{ alignSelf: "flex-start" }}>
+                Save keys
+              </button>
+            </form>
+          </section>
+        )}
       </div>
     </div>
   );
