@@ -120,6 +120,14 @@ export default function Dashboard() {
     loadPlatformStatus();
   }, [token]);
 
+  // Forces a re-render every 15s so the "Wait X min" cooldown countdown actually
+  // ticks down instead of freezing at whatever value was shown on the last render.
+  const [, setCooldownTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setCooldownTick((t) => t + 1), 15000);
+    return () => clearInterval(interval);
+  }, []);
+
   async function loadAll() {
     setLoading(true);
     const userRes = await fetch(`/api/user?token=${token}`);
