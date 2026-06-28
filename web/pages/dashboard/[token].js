@@ -63,6 +63,7 @@ export default function Dashboard() {
   const [jobsTotal, setJobsTotal] = useState(0);
   const [jobsHasMore, setJobsHasMore] = useState(false);
   const [jobsStatusFilter, setJobsStatusFilter] = useState("");
+  const [showLowScore, setShowLowScore] = useState(false);
 
   const [anthropicKey, setAnthropicKey] = useState("");
   const [slackWebhook, setSlackWebhook] = useState("");
@@ -111,15 +112,25 @@ export default function Dashboard() {
     setLoading(false);
   }
 
-  async function loadJobs(page, statusFilter) {
+  async function loadJobs(page, statusFilter, showLowOverride) {
+    const showLow = showLowOverride !== undefined ? showLowOverride : showLowScore;
     const params = new URLSearchParams({ token, page: String(page) });
     if (statusFilter) params.set("status", statusFilter);
+    // Only apply the relevance floor on the unfiltered "All" view - if someone
+    // explicitly filters by status (e.g. Skip), show everything regardless of score.
+    if (!showLow && !statusFilter) params.set("minScore", "40");
     const res = await fetch(`/api/jobs?${params.toString()}`);
     const data = await res.json();
     setJobs(data.jobs || []);
     setJobsPage(data.page || 0);
     setJobsTotal(data.total || 0);
     setJobsHasMore(!!data.hasMore);
+  }
+
+  function toggleShowLowScore() {
+    const next = !showLowScore;
+    setShowLowScore(next);
+    loadJobs(0, jobsStatusFilter, next);
   }
 
   async function setJobStatus(jobId, status, reason) {
@@ -418,7 +429,18 @@ export default function Dashboard() {
             <section className={styles.section}>
             <div className={styles.sectionHeadRow}>
               <h2>Jobs found ({jobsTotal})</h2>
+              {!jobsStatusFilter && (
+                <button type="button" onClick={toggleShowLowScore} className={styles.filterInactive}>
+                  {showLowScore ? "Hide low-relevance jobs" : "Show low-relevance jobs"}
+                </button>
+              )}
             </div>
+            {!jobsStatusFilter && !showLowScore && (
+              <p className={styles.subtitle} style={{ marginTop: -4 }}>
+                Jobs scored below 40 are hidden by default - they're still saved so they
+                won't be rescored, just kept off this view.
+              </p>
+            )}
             <div className={styles.filterRow}>
               {["", "new", "interested", "applied", "skip", "closed"].map((s) => (
                 <button
