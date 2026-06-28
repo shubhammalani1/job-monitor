@@ -123,14 +123,17 @@ def _is_attrax_site(html: str) -> bool:
     return "attrax-vacancy-tile" in html or "attraxAntiforgeryToken" in html
 
 
-def _scrape_attrax(company_name: str, careers_url: str) -> list[dict]:
+def _scrape_attrax(company_name: str, careers_url: str) -> tuple[list[dict], bool]:
+    """Returns (jobs, is_attrax_site) - is_attrax_site is True even if jobs is empty,
+    so the caller can distinguish 'attrax site with zero current postings' from
+    'not an attrax site at all' for platform-detection purposes."""
     parsed = urlparse(careers_url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
     first_page = requests.get(careers_url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
     first_page.raise_for_status()
     if not _is_attrax_site(first_page.text):
-        return []
+        return [], False
 
     all_jobs = []
     seen_ids = set()
@@ -144,11 +147,15 @@ def _scrape_attrax(company_name: str, careers_url: str) -> list[dict]:
             seen_ids.add(j["external_job_id"])
         all_jobs.extend(new_jobs)
 
-    return all_jobs
+    return all_jobs, True
 
 
-def scrape_company_careers(company_name: str, careers_url: str) -> list[dict]:
+def scrape_company_careers(company_name: str, careers_url: str) -> tuple[list[dict], str]:
     """Scrapes a company's careers page for jobs.
+
+    Returns (jobs, detected_platform). detected_platform is one of
+    "greenhouse", "lever", "attrax", or "unsupported" - used to show a status
+    badge in the dashboard so it's clear which companies are actually working.
 
     Supports Greenhouse and Lever boards via their public JSON APIs (detected
     from careers_url), and Attrax-based career sites (detected by fetching the
@@ -159,23 +166,23 @@ def scrape_company_careers(company_name: str, careers_url: str) -> list[dict]:
     """
     try:
         if not careers_url:
-            return []
+            return [], "unsupported"
 
         for pattern in GREENHOUSE_PATTERNS:
             match = pattern.search(careers_url)
             if match:
-                return _scrape_greenhouse(company_name, match.group(1))
+                return _scrape_greenhouse(company_name, match.group(1)), "greenhouse"
 
         lever_match = LEVER_PATTERN.search(careers_url)
         if lever_match:
-            return _scrape_lever(company_name, lever_match.group(1))
+            return _scrape_lever(company_name, lever_match.group(1)), "lever"
 
-        attrax_jobs = _scrape_attrax(company_name, careers_url)
-        if attrax_jobs:
-            return attrax_jobs
+        attrax_jobs, is_attrax = _scrape_attrax(company_name, careers_url)
+        if is_attrax:
+            return attrax_jobs, "attrax"
 
         print(f"Careers scraper not yet implemented for {company_name} ({careers_url}) - add manually")
-        return []
+        return [], "unsupported"
     except Exception as e:
         print(f"ERROR: scrape_company_careers failed for {company_name}: {e}")
-        return []
+        return [], "unsupported"

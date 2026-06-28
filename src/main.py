@@ -13,6 +13,8 @@ from config import (
     get_effective_jsearch_key,
     reset_jsearch_usage_if_due,
     increment_jsearch_usage,
+    mark_phrase_run,
+    mark_company_run,
 )
 from fetch import fetch_jobs_for_phrase
 from careers import scrape_company_careers
@@ -49,18 +51,34 @@ def update_run_log(run_id: str | None, **fields) -> None:
         print(f"ERROR: failed to update run log {run_id}: {e}")
 
 
+def _is_scheduled_run_time(run_times: list[str]) -> bool:
+    """True if the current UTC hour matches one of the configured run times.
+    The cron heartbeat fires every hour, so matching on the hour is enough granularity."""
+    current_hour = datetime.datetime.now(datetime.timezone.utc).hour
+    configured_hours = set()
+    for t in run_times or []:
+        try:
+            configured_hours.add(int(t.split(":")[0]))
+        except (ValueError, IndexError):
+            continue
+    return current_hour in configured_hours
+
+
 def run_for_user(
     user: dict,
     app_settings: dict,
     jsearch_budget: dict,
     phrase_ids: list[str] | None,
     company_ids: list[str] | None,
+    phrases_due: bool,
+    is_on_demand: bool,
 ) -> None:
     user_id = user["id"]
     profile = user.get("profile") or {}
     anthropic_api_key = user.get("anthropic_api_key") or app_settings.get("anthropic_api_key")
     slack_webhook_url = user.get("slack_webhook_url")
     jsearch_api_key = get_effective_jsearch_key(app_settings)
+    default_company_run_times = app_settings.get("company_run_times")
 
     run_id = create_run_log(user_id)
     print(f"--- Run started for user '{user.get('name')}' ({user_id}), run_id={run_id} ---")
@@ -69,9 +87,12 @@ def run_for_user(
     companies_checked = 0
 
     try:
-        phrases = get_active_phrases(user_id, phrase_ids)
+        phrases = get_active_phrases(user_id, phrase_ids) if phrases_due else []
         companies = get_active_companies(user_id, company_ids)
-        print(f"Loaded {len(phrases)} active phrases, {len(companies)} active companies")
+        print(
+            f"Loaded {len(phrases)} active phrases (phrases_due={phrases_due}), "
+            f"{len(companies)} active companies"
+        )
 
         # Fetch phase
         all_jobs = []
@@ -88,18 +109,29 @@ def run_for_user(
             location = phrase_row.get("location") or "Dubai, UAE"
             print(f"Fetching jobs for phrase: '{phrase}' in '{location}'")
             jobs = fetch_jobs_for_phrase(phrase, location, jsearch_api_key)
+            for job in jobs:
+                job["search_phrase_id"] = phrase_row.get("id")
             all_jobs.extend(jobs)
             phrases_run += 1
             jsearch_budget["remaining"] -= 1
             increment_jsearch_usage(1)
+            mark_phrase_run(phrase_row.get("id"), phrase_row.get("times_run") or 0)
 
         for company_row in companies:
+            company_run_times = company_row.get("run_times") or default_company_run_times
+            company_due = is_on_demand or _is_scheduled_run_time(company_run_times)
+            if not company_due:
+                continue
+
             company_name = company_row.get("name")
             careers_url = company_row.get("careers_url")
             print(f"Checking careers page for: {company_name}")
-            jobs = scrape_company_careers(company_name, careers_url)
+            jobs, detected_platform = scrape_company_careers(company_name, careers_url)
+            for job in jobs:
+                job["company_id"] = company_row.get("id")
             all_jobs.extend(jobs)
             companies_checked += 1
+            mark_company_run(company_row.get("id"), company_row.get("times_run") or 0, detected_platform)
 
         total_found = len(all_jobs)
 
@@ -172,19 +204,6 @@ def run_for_user(
         )
 
 
-def _is_scheduled_run_time(run_times: list[str]) -> bool:
-    """True if the current UTC hour matches one of the configured run times.
-    The cron heartbeat fires every hour, so matching on the hour is enough granularity."""
-    current_hour = datetime.datetime.now(datetime.timezone.utc).hour
-    configured_hours = set()
-    for t in run_times or []:
-        try:
-            configured_hours.add(int(t.split(":")[0]))
-        except (ValueError, IndexError):
-            continue
-    return current_hour in configured_hours
-
-
 def main():
     target_user_id = os.environ.get("TARGET_USER_ID") or None
     phrase_ids_raw = os.environ.get("TARGET_PHRASE_IDS") or ""
@@ -202,9 +221,12 @@ def main():
         print("Pipeline is paused (platform setting) - skipping this scheduled run")
         return
 
-    if not is_on_demand and not _is_scheduled_run_time(app_settings.get("run_times")):
-        print(f"Not a configured run time (run_times={app_settings.get('run_times')}) - skipping this heartbeat")
-        return
+    phrases_due = is_on_demand or _is_scheduled_run_time(app_settings.get("run_times"))
+    if not phrases_due:
+        print(
+            f"Not a configured phrase run time (run_times={app_settings.get('run_times')}) - "
+            f"will still check any companies due this hour"
+        )
 
     quota_limit = app_settings.get("jsearch_quota_limit") or 200
     calls_used = app_settings.get("jsearch_calls_this_period") or 0
@@ -215,7 +237,7 @@ def main():
     print(f"Loaded {len(users)} active users")
 
     for user in users:
-        run_for_user(user, app_settings, jsearch_budget, phrase_ids, company_ids)
+        run_for_user(user, app_settings, jsearch_budget, phrase_ids, company_ids, phrases_due, is_on_demand)
 
     print("=== Job monitor run completed for all users ===")
 

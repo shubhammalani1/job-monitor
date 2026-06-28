@@ -6,6 +6,7 @@ const EDITABLE_FIELDS = [
   "jsearch_api_key",
   "paused",
   "run_times",
+  "company_run_times",
   "jsearch_quota_limit",
   "jsearch_period_reset_at",
 ];
@@ -20,6 +21,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         paused: data.paused,
         run_times: data.run_times,
+        company_run_times: data.company_run_times,
         jsearch_quota_limit: data.jsearch_quota_limit,
         jsearch_calls_this_period: data.jsearch_calls_this_period,
         jsearch_period_reset_at: data.jsearch_period_reset_at,

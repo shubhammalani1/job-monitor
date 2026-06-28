@@ -138,6 +138,8 @@ def save_jobs(jobs_list: list[dict], user_id: str) -> None:
                 "job_url": job.get("job_url"),
                 "raw_data": job.get("raw_data"),
                 "notified_at": job.get("notified_at"),
+                "search_phrase_id": job.get("search_phrase_id"),
+                "company_id": job.get("company_id"),
             }
         )
 

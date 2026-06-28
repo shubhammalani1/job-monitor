@@ -99,6 +99,7 @@ export default function Dashboard() {
     jsearch_api_key: "",
     paused: false,
     run_times: "",
+    company_run_times: "",
     jsearch_quota_limit: 200,
   });
   const [platformMessage, setPlatformMessage] = useState("");
@@ -109,6 +110,8 @@ export default function Dashboard() {
   const [revealedLinkIds, setRevealedLinkIds] = useState([]);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [resumeError, setResumeError] = useState("");
+  const [companyRunTimesDrafts, setCompanyRunTimesDrafts] = useState({});
+  const [searchSetupError, setSearchSetupError] = useState("");
   const [selectedPhraseIds, setSelectedPhraseIds] = useState([]);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
   const [targetedRunLoading, setTargetedRunLoading] = useState(false);
@@ -378,6 +381,7 @@ export default function Dashboard() {
           ...f,
           paused: data.paused,
           run_times: (data.run_times || []).join(", "),
+          company_run_times: (data.company_run_times || []).join(", "),
           jsearch_quota_limit: data.jsearch_quota_limit,
         }));
       }
@@ -502,6 +506,10 @@ export default function Dashboard() {
             .split(",")
             .map((t) => t.trim())
             .filter(Boolean),
+          company_run_times: platformForm.company_run_times
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
           jsearch_quota_limit: parseInt(platformForm.jsearch_quota_limit, 10) || 200,
         }),
       });
@@ -588,11 +596,17 @@ export default function Dashboard() {
   async function addPhrase(e) {
     e.preventDefault();
     if (!newPhrase.trim()) return;
-    await fetch("/api/phrases", {
+    setSearchSetupError("");
+    const res = await fetch("/api/phrases", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, phrase: newPhrase, location: newLocation || undefined }),
     });
+    if (!res.ok) {
+      const data = await res.json();
+      setSearchSetupError(data.error || "Failed to add phrase");
+      return;
+    }
     setNewPhrase("");
     setNewLocation("");
     loadAll();
@@ -619,11 +633,17 @@ export default function Dashboard() {
   async function addCompany(e) {
     e.preventDefault();
     if (!newCompanyName.trim()) return;
-    await fetch("/api/companies", {
+    setSearchSetupError("");
+    const res = await fetch("/api/companies", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, name: newCompanyName, careers_url: newCompanyUrl || undefined }),
     });
+    if (!res.ok) {
+      const data = await res.json();
+      setSearchSetupError(data.error || "Failed to add company");
+      return;
+    }
     setNewCompanyName("");
     setNewCompanyUrl("");
     loadAll();
@@ -636,6 +656,28 @@ export default function Dashboard() {
       body: JSON.stringify({ token, id, active: !active }),
     });
     loadAll();
+  }
+
+  async function saveCompanyRunTimes(id) {
+    const draft = companyRunTimesDrafts[id] ?? "";
+    const run_times = draft
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    await fetch("/api/companies", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, id, run_times }),
+    });
+    flashSaved("Company schedule saved");
+    loadAll();
+  }
+
+  function statsLine(item) {
+    const parts = [`Run ${item.times_run || 0}x`, `${item.jobs_found || 0} jobs found`];
+    if (item.avg_score !== null && item.avg_score !== undefined) parts.push(`avg score ${item.avg_score}`);
+    parts.push(`${item.interested_or_applied || 0} interested/applied`, `${item.skipped || 0} skipped`);
+    return parts.join(" · ");
   }
 
   async function deleteCompany(id) {
@@ -828,6 +870,7 @@ export default function Dashboard() {
 
         {activeTab === "search" && (
           <>
+            {searchSetupError && <div className={styles.error} style={{ marginBottom: 16 }}>{searchSetupError}</div>}
             {(selectedPhraseIds.length > 0 || selectedCompanyIds.length > 0) && (
               <section className={styles.section} style={{ position: "sticky", top: 10, zIndex: 5 }}>
                 <p className={styles.subtitle} style={{ margin: 0, marginBottom: 8 }}>
@@ -861,23 +904,28 @@ export default function Dashboard() {
               </p>
               <ul className={styles.list}>
                 {phrases.map((p) => (
-                  <li key={p.id} className={styles.listItem}>
-                    <span style={{ opacity: p.active ? 1 : 0.4 }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedPhraseIds.includes(p.id)}
-                        onChange={() => togglePhraseSelection(p.id)}
-                        style={{ marginRight: 8 }}
-                      />
-                      {p.phrase} {p.location ? `— ${p.location}` : ""}
-                    </span>
-                    <span>
-                      <button type="button" onClick={() => togglePhrase(p.id, p.active)}>
-                        {p.active ? "Pause" : "Resume"}
-                      </button>
-                      <button type="button" onClick={() => deletePhrase(p.id)}>
-                        Delete
-                      </button>
+                  <li key={p.id} className={styles.listItem} style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                      <span style={{ opacity: p.active ? 1 : 0.4 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedPhraseIds.includes(p.id)}
+                          onChange={() => togglePhraseSelection(p.id)}
+                          style={{ marginRight: 8 }}
+                        />
+                        {p.phrase} {p.location ? `— ${p.location}` : ""}
+                      </span>
+                      <span>
+                        <button type="button" onClick={() => togglePhrase(p.id, p.active)}>
+                          {p.active ? "Pause" : "Resume"}
+                        </button>
+                        <button type="button" onClick={() => deletePhrase(p.id)}>
+                          Delete
+                        </button>
+                      </span>
+                    </div>
+                    <span className={styles.jobCompany} style={{ paddingLeft: 24 }}>
+                      {statsLine(p)}
                     </span>
                   </li>
                 ))}
@@ -893,24 +941,48 @@ export default function Dashboard() {
               <h2>Companies to watch</h2>
               <ul className={styles.list}>
                 {companies.map((c) => (
-                  <li key={c.id} className={styles.listItem}>
-                    <span style={{ opacity: c.active ? 1 : 0.4 }}>
+                  <li key={c.id} className={styles.listItem} style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                      <span style={{ opacity: c.active ? 1 : 0.4 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedCompanyIds.includes(c.id)}
+                          onChange={() => toggleCompanySelection(c.id)}
+                          style={{ marginRight: 8 }}
+                        />
+                        {c.name} {c.careers_url ? `— ${c.careers_url}` : ""}
+                        {c.detected_platform && (
+                          <span
+                            className={c.detected_platform === "unsupported" ? styles.scoreLow : styles.scoreHigh}
+                            style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 6, fontSize: 11 }}
+                          >
+                            {c.detected_platform}
+                          </span>
+                        )}
+                      </span>
+                      <span>
+                        <button type="button" onClick={() => toggleCompany(c.id, c.active)}>
+                          {c.active ? "Pause" : "Resume"}
+                        </button>
+                        <button type="button" onClick={() => deleteCompany(c.id)}>
+                          Delete
+                        </button>
+                      </span>
+                    </div>
+                    <span className={styles.jobCompany} style={{ paddingLeft: 24 }}>
+                      {statsLine(c)}
+                    </span>
+                    <div style={{ paddingLeft: 24, display: "flex", gap: 8, alignItems: "center" }}>
                       <input
-                        type="checkbox"
-                        checked={selectedCompanyIds.includes(c.id)}
-                        onChange={() => toggleCompanySelection(c.id)}
-                        style={{ marginRight: 8 }}
+                        placeholder="Custom schedule, e.g. 09:00, 18:00 (blank = default)"
+                        value={companyRunTimesDrafts[c.id] ?? (c.run_times || []).join(", ")}
+                        onChange={(e) => setCompanyRunTimesDrafts({ ...companyRunTimesDrafts, [c.id]: e.target.value })}
+                        style={{ flex: 1, fontSize: 12, padding: "4px 8px" }}
                       />
-                      {c.name} {c.careers_url ? `— ${c.careers_url}` : ""}
-                    </span>
-                    <span>
-                      <button type="button" onClick={() => toggleCompany(c.id, c.active)}>
-                        {c.active ? "Pause" : "Resume"}
+                      <button type="button" onClick={() => saveCompanyRunTimes(c.id)} style={{ fontSize: 12, padding: "4px 10px" }}>
+                        Save schedule
                       </button>
-                      <button type="button" onClick={() => deleteCompany(c.id)}>
-                        Delete
-                      </button>
-                    </span>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1190,12 +1262,24 @@ export default function Dashboard() {
                     />
                   </label>
                   <label>
-                    Run times (UTC, comma-separated, e.g. 04:00, 09:00, 16:00)
+                    Phrase search run times (UTC, comma-separated, e.g. 04:00, 09:00, 16:00)
                     <input
                       value={platformForm.run_times}
                       onChange={(e) => setPlatformForm({ ...platformForm, run_times: e.target.value })}
                     />
                   </label>
+                  <label>
+                    Default company scrape run times (UTC, comma-separated)
+                    <input
+                      value={platformForm.company_run_times}
+                      onChange={(e) => setPlatformForm({ ...platformForm, company_run_times: e.target.value })}
+                    />
+                  </label>
+                  <p className={styles.subtitle} style={{ marginTop: -6, marginBottom: 0 }}>
+                    Companies don't need to refresh as often as job-board searches - this default
+                    applies to any company without its own custom schedule, set per-company in Search
+                    setup.
+                  </p>
                   <label>
                     <input
                       type="checkbox"

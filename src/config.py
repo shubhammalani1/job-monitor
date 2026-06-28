@@ -69,7 +69,8 @@ def get_active_users(target_user_id: str | None = None) -> list[dict]:
 
 
 def get_active_phrases(user_id: str, phrase_ids: list[str] | None = None) -> list[dict]:
-    """Returns list of {id, phrase, location} dicts for this user's active search phrases.
+    """Returns list of {id, phrase, location, times_run} dicts for this user's active
+    search phrases.
 
     If phrase_ids is set, restricts to just those (used for targeted "run selected only"
     triggers) without touching the active flag in the database.
@@ -78,7 +79,7 @@ def get_active_phrases(user_id: str, phrase_ids: list[str] | None = None) -> lis
         supabase = get_supabase()
         query = (
             supabase.table("search_phrases")
-            .select("id, phrase, location")
+            .select("id, phrase, location, times_run")
             .eq("user_id", user_id)
             .eq("active", True)
         )
@@ -92,7 +93,9 @@ def get_active_phrases(user_id: str, phrase_ids: list[str] | None = None) -> lis
 
 
 def get_active_companies(user_id: str, company_ids: list[str] | None = None) -> list[dict]:
-    """Returns list of {id, name, careers_url} dicts for this user's active companies.
+    """Returns list of {id, name, careers_url, run_times, times_run} dicts for this
+    user's active companies. run_times is None if the company uses the platform-wide
+    default schedule instead of its own.
 
     If company_ids is set, restricts to just those (used for targeted "run selected only"
     triggers) without touching the active flag in the database.
@@ -101,7 +104,7 @@ def get_active_companies(user_id: str, company_ids: list[str] | None = None) -> 
         supabase = get_supabase()
         query = (
             supabase.table("companies")
-            .select("id, name, careers_url")
+            .select("id, name, careers_url, run_times, times_run")
             .eq("user_id", user_id)
             .eq("active", True)
             .not_.is_("careers_url", "null")
@@ -115,9 +118,40 @@ def get_active_companies(user_id: str, company_ids: list[str] | None = None) -> 
         return []
 
 
+def mark_phrase_run(phrase_id: str, times_run: int) -> None:
+    try:
+        supabase = get_supabase()
+        supabase.table("search_phrases").update(
+            {"times_run": times_run + 1, "last_run_at": _now_iso()}
+        ).eq("id", phrase_id).execute()
+    except Exception as e:
+        print(f"ERROR: failed to update run counter for phrase {phrase_id}: {e}")
+
+
+def mark_company_run(company_id: str, times_run: int, detected_platform: str) -> None:
+    try:
+        supabase = get_supabase()
+        supabase.table("companies").update(
+            {
+                "times_run": times_run + 1,
+                "last_run_at": _now_iso(),
+                "detected_platform": detected_platform,
+            }
+        ).eq("id", company_id).execute()
+    except Exception as e:
+        print(f"ERROR: failed to update run counter for company {company_id}: {e}")
+
+
+def _now_iso() -> str:
+    import datetime
+
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
 DEFAULT_APP_SETTINGS = {
     "paused": False,
     "run_times": ["04:00", "09:00", "16:00"],
+    "company_run_times": ["09:00"],
     "anthropic_api_key": None,
     "jsearch_api_key": None,
     "jsearch_quota_limit": 200,

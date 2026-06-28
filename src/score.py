@@ -161,7 +161,7 @@ def score_job(job_dict: dict, profile: dict, anthropic_api_key: str, feedback: d
             raise RuntimeError("user has no anthropic_api_key configured")
 
         prompt = _format_profile_prompt(profile, job_dict, feedback)
-        client = anthropic.Anthropic(api_key=anthropic_api_key)
+        client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=60.0)
         response = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=500,
