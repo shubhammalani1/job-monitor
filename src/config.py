@@ -43,20 +43,25 @@ def get_supabase() -> Client:
     return _supabase_client
 
 
-def get_active_users() -> list[dict]:
+def get_active_users(target_user_id: str | None = None) -> list[dict]:
     """Returns list of active user rows: id, name, profile, anthropic_api_key, slack_webhook_url.
 
     Each user brings their own Anthropic key and Slack webhook - the platform only
     supplies JSearch access and Supabase storage.
+
+    If target_user_id is set, only that user is returned (used for on-demand
+    "Run now" triggers so they don't burn every other user's quota).
     """
     try:
         supabase = get_supabase()
-        response = (
+        query = (
             supabase.table("users")
             .select("id, name, profile, anthropic_api_key, slack_webhook_url")
             .eq("active", True)
-            .execute()
         )
+        if target_user_id:
+            query = query.eq("id", target_user_id)
+        response = query.execute()
         return response.data or []
     except Exception as e:
         print(f"ERROR: failed to load active users: {e}")

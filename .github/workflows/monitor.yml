@@ -5,7 +5,12 @@ on:
     - cron: "0 4 * * *"
     - cron: "0 9 * * *"
     - cron: "0 16 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "If set, only run for this user (used by on-demand dashboard runs)"
+        required: false
+        type: string
 
 jobs:
   run-monitor:
@@ -26,4 +31,5 @@ jobs:
           JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TARGET_USER_ID: ${{ inputs.user_id }}
         run: python src/main.py

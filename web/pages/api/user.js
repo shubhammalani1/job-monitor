@@ -16,5 +16,6 @@ export default async function handler(req, res) {
     active: user.active,
     has_anthropic_key: !!user.anthropic_api_key,
     has_slack_webhook: !!user.slack_webhook_url,
+    last_manual_run_at: user.last_manual_run_at,
   });
 }

@@ -44,6 +44,8 @@ export default function Dashboard() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyUrl, setNewCompanyUrl] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+  const [runningNow, setRunningNow] = useState(false);
+  const [runNowError, setRunNowError] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -103,6 +105,36 @@ export default function Dashboard() {
     setSlackWebhook("");
     flashSaved("Keys saved");
     loadAll();
+  }
+
+  async function runNow() {
+    setRunningNow(true);
+    setRunNowError("");
+    try {
+      const res = await fetch("/api/run-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRunNowError(data.error || "Failed to trigger run");
+      } else {
+        flashSaved("Run triggered - check back in a few minutes");
+        loadAll();
+      }
+    } catch (e) {
+      setRunNowError(e.message);
+    } finally {
+      setRunningNow(false);
+    }
+  }
+
+  function cooldownRemainingMinutes() {
+    if (!user?.last_manual_run_at) return 0;
+    const elapsedMs = Date.now() - new Date(user.last_manual_run_at).getTime();
+    const remainingMs = 10 * 60 * 1000 - elapsedMs;
+    return remainingMs > 0 ? Math.ceil(remainingMs / 60000) : 0;
   }
 
   async function addPhrase(e) {
@@ -175,6 +207,22 @@ export default function Dashboard() {
       <div className={styles.dashboard}>
         <h1>Welcome, {user.name}</h1>
         {savedMessage && <div className={styles.toast}>{savedMessage}</div>}
+
+        <section className={styles.section}>
+          <h2>Run search now</h2>
+          <p className={styles.subtitle}>
+            Normally this runs automatically 3x/day. Use this to check right now instead of waiting
+            for the next scheduled run.
+          </p>
+          <button type="button" onClick={runNow} disabled={runningNow || cooldownRemainingMinutes() > 0}>
+            {runningNow
+              ? "Triggering..."
+              : cooldownRemainingMinutes() > 0
+              ? `Wait ${cooldownRemainingMinutes()} min`
+              : "Run now"}
+          </button>
+          {runNowError && <div className={styles.error}>{runNowError}</div>}
+        </section>
 
         <section className={styles.section}>
           <h2>Your profile</h2>

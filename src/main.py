@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 
 from config import get_active_users, get_active_phrases, get_active_companies, get_supabase
 from fetch import fetch_jobs_for_phrase
@@ -137,8 +138,9 @@ def run_for_user(user: dict) -> None:
 
 
 def main():
-    print("=== Job monitor run started ===")
-    users = get_active_users()
+    target_user_id = os.environ.get("TARGET_USER_ID") or None
+    print("=== Job monitor run started ===" + (f" (target user: {target_user_id})" if target_user_id else ""))
+    users = get_active_users(target_user_id)
     print(f"Loaded {len(users)} active users")
 
     for user in users:
