@@ -103,6 +103,8 @@ export default function Dashboard() {
   });
   const [platformMessage, setPlatformMessage] = useState("");
   const [platformError, setPlatformError] = useState("");
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const [resumeError, setResumeError] = useState("");
   const [selectedPhraseIds, setSelectedPhraseIds] = useState([]);
   const [selectedCompanyIds, setSelectedCompanyIds] = useState([]);
   const [targetedRunLoading, setTargetedRunLoading] = useState(false);
@@ -251,6 +253,52 @@ export default function Dashboard() {
       body: JSON.stringify({ token, profile }),
     });
     flashSaved("Profile saved");
+  }
+
+  function handleResumeUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setResumeLoading(true);
+    setResumeError("");
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = reader.result.split(",")[1];
+        const res = await fetch("/api/parse-resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, filename: file.name, fileBase64: base64 }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setResumeError(data.error || "Failed to parse resume");
+          return;
+        }
+        const extracted = data.profile || {};
+        setProfile((p) => ({
+          ...p,
+          current_role: extracted.current_role || p.current_role,
+          current_company: extracted.current_company || p.current_company,
+          location: extracted.location || p.location,
+          background: extracted.background?.length ? extracted.background : p.background,
+          education: extracted.education?.length ? extracted.education : p.education,
+          target_roles: extracted.target_roles?.length ? extracted.target_roles : p.target_roles,
+        }));
+        flashSaved("Resume parsed - review the fields below, then save");
+      } catch (err) {
+        setResumeError(err.message);
+      } finally {
+        setResumeLoading(false);
+        e.target.value = "";
+      }
+    };
+    reader.onerror = () => {
+      setResumeError("Failed to read file");
+      setResumeLoading(false);
+    };
+    reader.readAsDataURL(file);
   }
 
   async function checkSkipPatterns() {
@@ -817,6 +865,17 @@ export default function Dashboard() {
 
         {activeTab === "profile" && (
           <>
+            <section className={styles.section}>
+              <h2>Upload your resume (optional)</h2>
+              <p className={styles.subtitle}>
+                Auto-fills the fields below from a PDF, DOCX, or text resume - review and edit
+                before saving, nothing is saved automatically.
+              </p>
+              <input type="file" accept=".pdf,.docx,.txt" onChange={handleResumeUpload} disabled={resumeLoading} />
+              {resumeLoading && <p className={styles.subtitle} style={{ marginTop: 8 }}>Reading resume...</p>}
+              {resumeError && <div className={styles.error} style={{ marginTop: 10 }}>{resumeError}</div>}
+            </section>
+
             <section className={styles.section}>
               <h2>Spot a pattern in what you skip?</h2>
               <p className={styles.subtitle}>
