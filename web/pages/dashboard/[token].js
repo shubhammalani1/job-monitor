@@ -81,6 +81,8 @@ export default function Dashboard() {
   const [newJobNotes, setNewJobNotes] = useState("");
   const [addJobError, setAddJobError] = useState("");
   const [addJobSuggestion, setAddJobSuggestion] = useState(null);
+  const [needsManualEntry, setNeedsManualEntry] = useState(false);
+  const [addJobLoading, setAddJobLoading] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -142,24 +144,27 @@ export default function Dashboard() {
   async function addManualJob(e) {
     e.preventDefault();
     setAddJobError("");
+    setAddJobLoading(true);
     try {
       const res = await fetch("/api/add-job", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token,
-          title: newJobTitle,
-          company_name: newJobCompany,
           job_url: newJobUrl || undefined,
+          title: newJobTitle || undefined,
+          company_name: newJobCompany || undefined,
           notes: newJobNotes || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
         setAddJobError(data.error || "Failed to add job");
+        if (data.needsManualEntry) setNeedsManualEntry(true);
         return;
       }
       setAddJobSuggestion({ phrase: data.suggestPhrase, company: data.suggestCompany });
+      setNeedsManualEntry(false);
       setNewJobTitle("");
       setNewJobCompany("");
       setNewJobUrl("");
@@ -168,6 +173,8 @@ export default function Dashboard() {
       loadJobs(0, jobsStatusFilter);
     } catch (err) {
       setAddJobError(err.message);
+    } finally {
+      setAddJobLoading(false);
     }
   }
 
@@ -361,15 +368,30 @@ export default function Dashboard() {
             <section className={styles.section}>
               <h2>Found a job elsewhere?</h2>
               <p className={styles.subtitle}>
-                Add it here and mark it interested - the tool can then suggest tracking that
-                title or company so it finds more like it automatically.
+                Paste the link and it'll pull the title, company, and description automatically,
+                mark it interested, and suggest tracking that title or company going forward.
               </p>
               <form onSubmit={addManualJob} className={styles.inlineForm} style={{ flexWrap: "wrap" }}>
-                <input placeholder="Job title" value={newJobTitle} onChange={(e) => setNewJobTitle(e.target.value)} required />
-                <input placeholder="Company" value={newJobCompany} onChange={(e) => setNewJobCompany(e.target.value)} required />
-                <input placeholder="Link (optional)" value={newJobUrl} onChange={(e) => setNewJobUrl(e.target.value)} />
-                <button type="submit">Add job</button>
+                <input
+                  placeholder="Paste a job posting link"
+                  value={newJobUrl}
+                  onChange={(e) => setNewJobUrl(e.target.value)}
+                  required={!needsManualEntry}
+                  style={{ flex: 2, minWidth: 220 }}
+                />
+                <button type="submit" disabled={addJobLoading}>
+                  {addJobLoading ? "Reading..." : "Add job"}
+                </button>
               </form>
+              {needsManualEntry && (
+                <form onSubmit={addManualJob} className={styles.inlineForm} style={{ flexWrap: "wrap", marginTop: 10 }}>
+                  <input placeholder="Job title" value={newJobTitle} onChange={(e) => setNewJobTitle(e.target.value)} required />
+                  <input placeholder="Company" value={newJobCompany} onChange={(e) => setNewJobCompany(e.target.value)} required />
+                  <button type="submit" disabled={addJobLoading}>
+                    Add with these details
+                  </button>
+                </form>
+              )}
               {addJobError && <div className={styles.error} style={{ marginTop: 10 }}>{addJobError}</div>}
               {addJobSuggestion && (addJobSuggestion.phrase || addJobSuggestion.company) && (
                 <div className={styles.toast} style={{ display: "block", marginTop: 12 }}>
