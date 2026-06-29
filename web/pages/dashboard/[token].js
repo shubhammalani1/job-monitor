@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import { Play, Trash2, Copy } from "lucide-react";
 import styles from "../../styles/shared.module.css";
+
+const iconStyle = { width: 13, height: 13, marginRight: 5, verticalAlign: -2 };
 
 const EMPTY_PROFILE = {
   current_role: "",
@@ -700,12 +703,12 @@ export default function Dashboard() {
             <span className={styles.brandDot} />
             Job Monitor
           </div>
-          <button type="button" onClick={runNow} disabled={runningNow || cooldownRemainingMinutes() > 0}>
+          <button className={styles.btnPrimary} type="button" onClick={runNow} disabled={runningNow || cooldownRemainingMinutes() > 0}>
             {runningNow
               ? "Triggering..."
               : cooldownRemainingMinutes() > 0
               ? `Wait ${cooldownRemainingMinutes()} min`
-              : "Run now"}
+              : (<><Play style={iconStyle} fill="currentColor" />Run now</>)}
           </button>
         </div>
 
@@ -876,12 +879,12 @@ export default function Dashboard() {
                 <p className={styles.subtitle} style={{ margin: 0, marginBottom: 8 }}>
                   {selectedPhraseIds.length} phrase(s), {selectedCompanyIds.length} company(ies) selected
                 </p>
-                <button type="button" onClick={runSelectedOnly} disabled={targetedRunLoading || cooldownRemainingMinutes() > 0}>
+                <button className={styles.btnPrimary} type="button" onClick={runSelectedOnly} disabled={targetedRunLoading || cooldownRemainingMinutes() > 0}>
                   {targetedRunLoading
                     ? "Triggering..."
                     : cooldownRemainingMinutes() > 0
                     ? `Wait ${cooldownRemainingMinutes()} min`
-                    : "Run selected only"}
+                    : (<><Play style={iconStyle} fill="currentColor" />Run selected only</>)}
                 </button>
                 <button
                   type="button"
@@ -919,8 +922,8 @@ export default function Dashboard() {
                         <button type="button" onClick={() => togglePhrase(p.id, p.active)}>
                           {p.active ? "Pause" : "Resume"}
                         </button>
-                        <button type="button" onClick={() => deletePhrase(p.id)}>
-                          Delete
+                        <button className={styles.btnDanger} type="button" onClick={() => deletePhrase(p.id)}>
+                          <Trash2 style={iconStyle} />Delete
                         </button>
                       </span>
                     </div>
@@ -964,8 +967,8 @@ export default function Dashboard() {
                         <button type="button" onClick={() => toggleCompany(c.id, c.active)}>
                           {c.active ? "Pause" : "Resume"}
                         </button>
-                        <button type="button" onClick={() => deleteCompany(c.id)}>
-                          Delete
+                        <button className={styles.btnDanger} type="button" onClick={() => deleteCompany(c.id)}>
+                          <Trash2 style={iconStyle} />Delete
                         </button>
                       </span>
                     </div>
@@ -1138,7 +1141,7 @@ export default function Dashboard() {
             <section className={styles.section}>
               <h2>Where to find each key</h2>
               <details>
-                <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 14 }}>
+                <summary style={{ cursor: "pointer", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}>
                   Anthropic API key - click for steps
                 </summary>
                 <ol className={styles.subtitle} style={{ marginTop: 8 }}>
@@ -1149,7 +1152,7 @@ export default function Dashboard() {
                 </ol>
               </details>
               <details style={{ marginTop: 10 }}>
-                <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 14 }}>
+                <summary style={{ cursor: "pointer", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}>
                   Slack webhook URL - click for steps
                 </summary>
                 <ol className={styles.subtitle} style={{ marginTop: 8 }}>
@@ -1161,7 +1164,7 @@ export default function Dashboard() {
                 </ol>
               </details>
               <details style={{ marginTop: 10 }}>
-                <summary style={{ cursor: "pointer", color: "#a5b4fc", fontSize: 14 }}>
+                <summary style={{ cursor: "pointer", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}>
                   JSearch API key - click for steps
                 </summary>
                 <ol className={styles.subtitle} style={{ marginTop: 8 }}>
@@ -1341,7 +1344,7 @@ export default function Dashboard() {
                           {revealedLinkIds.includes(u.id) ? "Hide link" : "Show link"}
                         </button>
                         <button type="button" onClick={() => copyLink(u.access_token)}>
-                          Copy link
+                          <Copy style={iconStyle} />Copy link
                         </button>
                         <button type="button" onClick={() => runAdminUserAction(u.id, "toggle_active")}>
                           {u.active ? "Deactivate" : "Activate"}
@@ -1371,6 +1374,7 @@ export default function Dashboard() {
                           Clear job data
                         </button>
                         <button
+                          className={styles.btnDanger}
                           type="button"
                           onClick={() =>
                             runAdminUserAction(

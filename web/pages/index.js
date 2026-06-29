@@ -51,7 +51,7 @@ export default function Home() {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </label>
             {error && <div className={styles.error}>{error}</div>}
-            <button type="submit" disabled={loading} style={{ width: "100%", padding: "12px 16px" }}>
+            <button className={styles.btnPrimary} type="submit" disabled={loading} style={{ width: "100%", padding: "12px 16px" }}>
               {loading ? "Creating..." : "Create my dashboard"}
             </button>
           </form>

@@ -1,5 +1,68 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
 
+:root {
+  /* Surfaces */
+  --bg-base: #f7f7f8;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #fbfbfc;
+  --bg-elevated: #ffffff;
+  --border-subtle: rgba(20, 21, 26, 0.06);
+  --border-default: rgba(20, 21, 26, 0.1);
+  --border-strong: rgba(20, 21, 26, 0.16);
+
+  /* Text */
+  --text-primary: #16171d;
+  --text-secondary: #62636c;
+  --text-tertiary: #93939c;
+
+  /* Accent */
+  --accent: #5b50e6;
+  --accent-hover: #4a40d4;
+  --accent-soft: rgba(91, 80, 230, 0.08);
+  --accent-soft-border: rgba(91, 80, 230, 0.22);
+
+  /* Semantic */
+  --success: #1a9c6f;
+  --success-soft: rgba(26, 156, 111, 0.1);
+  --warning: #b5790a;
+  --warning-soft: rgba(181, 121, 10, 0.1);
+  --danger: #d4423f;
+  --danger-soft: rgba(212, 66, 63, 0.08);
+  --neutral: #6b6c75;
+  --neutral-soft: rgba(107, 108, 117, 0.08);
+
+  /* Spacing (8pt grid, with 4px half-step) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Shadows - subtle, layered, no heavy drop shadows */
+  --shadow-sm: 0 1px 2px rgba(20, 21, 26, 0.04);
+  --shadow-md: 0 4px 16px -4px rgba(20, 21, 26, 0.08), 0 1px 2px rgba(20, 21, 26, 0.04);
+  --shadow-lg: 0 16px 40px -12px rgba(20, 21, 26, 0.16);
+
+  /* Typography scale */
+  --font-display: 32px;
+  --font-h1: 24px;
+  --font-h2: 16px;
+  --font-h3: 14px;
+  --font-body: 14px;
+  --font-small: 13px;
+  --font-caption: 12px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -8,10 +71,11 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #0b0c10;
-  color: #e8e9ed;
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
@@ -19,6 +83,12 @@ a {
 }
 
 ::selection {
-  background: #6366f1;
+  background: var(--accent);
   color: white;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
