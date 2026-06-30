@@ -39,6 +39,7 @@ jobs:
       - name: Run job monitor
         env:
           JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
+          JOBSPIPE_API_KEY: ${{ secrets.JOBSPIPE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TARGET_USER_ID: ${{ inputs.user_id }}

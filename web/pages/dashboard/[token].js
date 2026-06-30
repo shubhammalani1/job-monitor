@@ -102,6 +102,7 @@ export default function Dashboard() {
   const [platformForm, setPlatformForm] = useState({
     anthropic_api_key: "",
     jsearch_api_key: "",
+    jobspipe_api_key: "",
     paused: false,
     run_times: "",
     company_run_times: "",
@@ -512,6 +513,7 @@ export default function Dashboard() {
           adminToken,
           anthropic_api_key: platformForm.anthropic_api_key || undefined,
           jsearch_api_key: platformForm.jsearch_api_key || undefined,
+          jobspipe_api_key: platformForm.jobspipe_api_key || undefined,
           paused: platformForm.paused,
           run_times: platformForm.run_times
             .split(",")
@@ -529,7 +531,7 @@ export default function Dashboard() {
         setPlatformError(data.error || "Failed to save platform settings");
         return;
       }
-      setPlatformForm((f) => ({ ...f, anthropic_api_key: "", jsearch_api_key: "" }));
+      setPlatformForm((f) => ({ ...f, anthropic_api_key: "", jsearch_api_key: "", jobspipe_api_key: "" }));
       flashSaved("Platform settings saved");
       loadPlatformStatus();
     } catch (err) {
@@ -1216,6 +1218,16 @@ export default function Dashboard() {
                   <li>If that changes later, you'd sign up at the JSearch/OpenWebNinja site and grab a key the same way.</li>
                 </ol>
               </details>
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", color: "var(--accent)", fontSize: 14, fontWeight: 600 }}>
+                  JobsPipe API key - click for steps
+                </summary>
+                <ol className={styles.subtitle} style={{ marginTop: 8 }}>
+                  <li>Optional - a second job source layered on top of JSearch. The pipeline works fine without it.</li>
+                  <li>Go to jobspipe.dev, sign up, and open the dashboard's API Keys settings page</li>
+                  <li>Copy the key (starts with jp_live_...) and paste it below</li>
+                </ol>
+              </details>
             </section>
 
             <section className={styles.section}>
@@ -1306,6 +1318,15 @@ export default function Dashboard() {
                       placeholder={platformStatus?.has_jsearch_key ? "•••••••• (leave blank to keep)" : "uses GitHub secret if blank"}
                       value={platformForm.jsearch_api_key}
                       onChange={(e) => setPlatformForm({ ...platformForm, jsearch_api_key: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Shared JobsPipe API key (optional - second job source)
+                    <input
+                      type="password"
+                      placeholder={platformStatus?.has_jobspipe_key ? "•••••••• (leave blank to keep)" : "uses GitHub secret if blank, or leave unset"}
+                      value={platformForm.jobspipe_api_key}
+                      onChange={(e) => setPlatformForm({ ...platformForm, jobspipe_api_key: e.target.value })}
                     />
                   </label>
                   <label>

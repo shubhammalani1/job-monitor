@@ -30,6 +30,11 @@ def load_env():
 JSEARCH_API_KEY = os.environ.get("JSEARCH_API_KEY")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+# Deliberately not in REQUIRED_ENV_VARS - JobsPipe is a second, additive job source on top
+# of an already-working pipeline (see fetch_jobspipe.py). Requiring it would break every
+# existing run the moment this ships, before the key is actually configured. It self-gates:
+# fetch_jobs_jobspipe() reads this directly and no-ops if unset.
+JOBSPIPE_API_KEY = os.environ.get("JOBSPIPE_API_KEY")
 
 _supabase_client: Client | None = None
 
@@ -180,6 +185,7 @@ DEFAULT_APP_SETTINGS = {
     "jsearch_quota_limit": 200,
     "jsearch_calls_this_period": 0,
     "jsearch_period_reset_at": None,
+    "jobspipe_api_key": None,
 }
 
 
@@ -199,6 +205,13 @@ def get_effective_jsearch_key(settings: dict) -> str | None:
     """Shared JSearch key from app_settings, falling back to the GitHub Actions
     secret env var if the admin hasn't set one via the dashboard yet."""
     return settings.get("jsearch_api_key") or JSEARCH_API_KEY
+
+
+def get_effective_jobspipe_key(settings: dict) -> str | None:
+    """Same pattern as get_effective_jsearch_key - shared JobsPipe key from
+    app_settings (dashboard-configurable), falling back to the GitHub Actions
+    secret env var. None is a valid result - JobsPipe is optional."""
+    return settings.get("jobspipe_api_key") or JOBSPIPE_API_KEY
 
 
 def reset_jsearch_usage_if_due(settings: dict) -> dict:

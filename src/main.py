@@ -11,6 +11,7 @@ from config import (
     get_supabase,
     get_app_settings,
     get_effective_jsearch_key,
+    get_effective_jobspipe_key,
     reset_jsearch_usage_if_due,
     increment_jsearch_usage,
     mark_phrase_run,
@@ -18,6 +19,7 @@ from config import (
     get_recent_company_posting_count,
 )
 from fetch import fetch_jobs_for_phrase
+from fetch_jobspipe import fetch_jobs_jobspipe
 from careers import scrape_company_careers, discover_company_ats
 from sources import fetch_remoteok_jobs, fetch_wwr_jobs, fetch_hn_whos_hiring, matches_any_target_role
 from dedupe import filter_new_jobs, save_jobs
@@ -28,6 +30,7 @@ from extract import enrich_description_if_thin
 from verify import filter_dead_links
 
 SCORE_THRESHOLD = 70
+JOBSPIPE_COUNTRIES = ["AE", "IN", "GB", "DE", "NL"]
 AUTO_TRACK_SCORE_THRESHOLD = 65
 
 
@@ -82,6 +85,7 @@ def run_for_user(
     anthropic_api_key = user.get("anthropic_api_key") or app_settings.get("anthropic_api_key")
     slack_webhook_url = user.get("slack_webhook_url")
     jsearch_api_key = get_effective_jsearch_key(app_settings)
+    jobspipe_api_key = get_effective_jobspipe_key(app_settings)
     default_company_run_times = app_settings.get("company_run_times")
 
     run_id = create_run_log(user_id)
@@ -99,6 +103,8 @@ def run_for_user(
         all_jobs = []
         target_roles = profile.get("target_roles") or []
 
+        sources_used = set()
+
         for phrase_row in phrases:
             phrase_run_times = phrase_row.get("run_times")
             phrase_due = is_on_demand or (
@@ -107,23 +113,41 @@ def run_for_user(
             if not phrase_due:
                 continue
 
-            if jsearch_budget["remaining"] <= 0:
-                print(
-                    f"WARNING: JSearch quota cap reached ({app_settings.get('jsearch_quota_limit')} "
-                    f"requests this period) - skipping remaining phrase fetches"
-                )
-                break
-
             phrase = phrase_row.get("phrase")
             location = phrase_row.get("location") or "Dubai, UAE"
-            print(f"Fetching jobs for phrase: '{phrase}' in '{location}'")
-            jobs = fetch_jobs_for_phrase(phrase, location, jsearch_api_key)
-            for job in jobs:
+
+            # JSearch and JobsPipe have separate, unrelated quotas - JSearch running out
+            # should only skip the JSearch call for this phrase, not stop JobsPipe (or
+            # later phrases) from running too.
+            if jsearch_budget["remaining"] > 0:
+                print(f"Fetching jobs for phrase: '{phrase}' in '{location}' (JSearch)")
+                jobs = fetch_jobs_for_phrase(phrase, location, jsearch_api_key)
+                for job in jobs:
+                    job["search_phrase_id"] = phrase_row.get("id")
+                all_jobs.extend(jobs)
+                phrases_run += 1
+                jsearch_budget["remaining"] -= 1
+                increment_jsearch_usage(1)
+                if jobs:
+                    sources_used.add("jsearch")
+            else:
+                print(
+                    f"WARNING: JSearch quota cap reached ({app_settings.get('jsearch_quota_limit')} "
+                    f"requests this period) - skipping JSearch fetch for '{phrase}' in '{location}'"
+                )
+
+            # JobsPipe is a second, independent source layered on top of JSearch - no-ops
+            # instantly if no key is configured (app_settings or GitHub secret), so
+            # always safe to call.
+            print(f"Fetching jobs for phrase: '{phrase}' (JobsPipe, countries={JOBSPIPE_COUNTRIES})")
+            jobspipe_jobs = fetch_jobs_jobspipe(phrase, jobspipe_api_key, countries=JOBSPIPE_COUNTRIES)
+            jobspipe_remote_jobs = fetch_jobs_jobspipe(phrase, jobspipe_api_key, remote=True)
+            for job in jobspipe_jobs + jobspipe_remote_jobs:
                 job["search_phrase_id"] = phrase_row.get("id")
-            all_jobs.extend(jobs)
-            phrases_run += 1
-            jsearch_budget["remaining"] -= 1
-            increment_jsearch_usage(1)
+            all_jobs.extend(jobspipe_jobs + jobspipe_remote_jobs)
+            if jobspipe_jobs or jobspipe_remote_jobs:
+                sources_used.add("jobspipe")
+
             mark_phrase_run(phrase_row.get("id"), phrase_row.get("times_run") or 0)
 
         for company_row in companies:
@@ -173,6 +197,8 @@ def run_for_user(
                 print(f"Checking aggregator source: {source_name}")
                 jobs = fetch_source(target_roles)
                 all_jobs.extend(jobs)
+                if jobs:
+                    sources_used.add(source_name.lower().replace(" ", "_").replace("'", ""))
                 print(f"{source_name}: {len(jobs)} jobs matched target roles")
 
         total_found = len(all_jobs)
@@ -270,13 +296,14 @@ def run_for_user(
             companies_checked=companies_checked,
             new_jobs_found=new_jobs_found,
             jobs_notified=notified_count,
+            sources_used=sorted(sources_used),
             status="completed",
         )
 
         print(f"--- Run summary for user '{user.get('name')}' ---")
         print(f"Phrases run: {phrases_run}, companies checked: {companies_checked}")
         print(f"Total jobs found: {total_found}, new: {new_jobs_found} (duplicates: {dupes})")
-        print(f"Jobs notified: {notified_count}")
+        print(f"Jobs notified: {notified_count}, sources used: {sorted(sources_used) or 'none'}")
 
     except Exception as e:
         print(f"ERROR: run failed for user '{user.get('name')}' ({user_id}): {e}")

@@ -4,6 +4,7 @@ import { verifyAdminToken } from "../../../lib/adminAuth";
 const EDITABLE_FIELDS = [
   "anthropic_api_key",
   "jsearch_api_key",
+  "jobspipe_api_key",
   "paused",
   "run_times",
   "company_run_times",
@@ -27,6 +28,7 @@ export default async function handler(req, res) {
         jsearch_period_reset_at: data.jsearch_period_reset_at,
         has_anthropic_key: !!data.anthropic_api_key,
         has_jsearch_key: !!data.jsearch_api_key,
+        has_jobspipe_key: !!data.jobspipe_api_key,
         pin_set: !!data.pin_hash,
       });
     } catch (e) {
