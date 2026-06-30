@@ -7,6 +7,15 @@ from config import get_supabase
 
 FUZZY_TITLE_SIMILARITY_THRESHOLD = 0.88
 
+# Direct company-careers scrapes link straight to the employer's own application page.
+# Aggregators (JSearch, RemoteOK, etc) often link to a mirror that can lag, redirect, or
+# 404 sooner. When the same job (by fingerprint) shows up from both, prefer the direct one.
+DIRECT_SOURCE_PLATFORMS = {"greenhouse", "lever", "ashby", "smartrecruiters", "workable", "attrax"}
+
+
+def _source_authority(job: dict) -> int:
+    return 1 if job.get("source_platform") in DIRECT_SOURCE_PLATFORMS else 0
+
 
 def _normalize(text: str) -> str:
     text = (text or "").lower()
@@ -64,6 +73,8 @@ def filter_new_jobs(jobs_list: list[dict], user_id: str) -> tuple[list[dict], in
         fp = job["fingerprint"]
         if fp in deduped_within_batch:
             intra_batch_dupes += 1
+            if _source_authority(job) > _source_authority(deduped_within_batch[fp]):
+                deduped_within_batch[fp] = job
         else:
             deduped_within_batch[fp] = job
     unique_jobs = list(deduped_within_batch.values())
@@ -74,18 +85,38 @@ def filter_new_jobs(jobs_list: list[dict], user_id: str) -> tuple[list[dict], in
         supabase = get_supabase()
         response = (
             supabase.table("seen_jobs")
-            .select("fingerprint")
+            .select("id, fingerprint, job_url, source_platform")
             .eq("user_id", user_id)
             .in_("fingerprint", fingerprints)
             .execute()
         )
-        existing_fingerprints = {row["fingerprint"] for row in (response.data or [])}
+        existing_rows = {row["fingerprint"]: row for row in (response.data or [])}
     except Exception as e:
         print(f"ERROR: filter_new_jobs failed to query seen_jobs for user {user_id}: {e}")
-        existing_fingerprints = set()
+        existing_rows = {}
 
-    after_exact = [job for job in unique_jobs if job["fingerprint"] not in existing_fingerprints]
+    after_exact = []
+    url_upgrades = 0
+    for job in unique_jobs:
+        existing = existing_rows.get(job["fingerprint"])
+        if not existing:
+            after_exact.append(job)
+            continue
+        # Already seen in a prior run - not new content, but if this run found the same
+        # job via a more authoritative source, upgrade the stored link in place so the
+        # user doesn't end up clicking through an aggregator mirror when a direct
+        # apply link is available.
+        if _source_authority(job) > _source_authority(existing):
+            try:
+                supabase.table("seen_jobs").update(
+                    {"job_url": job.get("job_url"), "source_platform": job.get("source_platform")}
+                ).eq("id", existing["id"]).execute()
+                url_upgrades += 1
+            except Exception as e:
+                print(f"ERROR: filter_new_jobs failed to upgrade job_url for fingerprint {job['fingerprint']}: {e}")
     exact_dupes = len(unique_jobs) - len(after_exact)
+    if url_upgrades:
+        print(f"Upgraded {url_upgrades} existing job(s) to a more direct application link")
 
     try:
         supabase = get_supabase()
@@ -135,6 +166,10 @@ def save_jobs(jobs_list: list[dict], user_id: str) -> None:
                 "claude_score": job.get("claude_score"),
                 "claude_reasoning": job.get("claude_reasoning"),
                 "salary_likely_above_floor": job.get("salary_likely_above_floor"),
+                "technical_match": job.get("technical_match"),
+                "ai_relevance": job.get("ai_relevance"),
+                "remote_fit": job.get("remote_fit"),
+                "career_growth": job.get("career_growth"),
                 "job_url": job.get("job_url"),
                 "raw_data": job.get("raw_data"),
                 "notified_at": job.get("notified_at"),

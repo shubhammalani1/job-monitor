@@ -67,6 +67,8 @@ export default function Dashboard() {
   const [jobsHasMore, setJobsHasMore] = useState(false);
   const [jobsStatusFilter, setJobsStatusFilter] = useState("");
   const [showLowScore, setShowLowScore] = useState(false);
+  const [jobsSort, setJobsSort] = useState("score");
+  const [companyFilterText, setCompanyFilterText] = useState("");
 
   const [anthropicKey, setAnthropicKey] = useState("");
   const [slackWebhook, setSlackWebhook] = useState("");
@@ -156,9 +158,10 @@ export default function Dashboard() {
     setLoading(false);
   }
 
-  async function loadJobs(page, statusFilter, showLowOverride) {
+  async function loadJobs(page, statusFilter, showLowOverride, sortOverride) {
     const showLow = showLowOverride !== undefined ? showLowOverride : showLowScore;
-    const params = new URLSearchParams({ token, page: String(page) });
+    const sort = sortOverride !== undefined ? sortOverride : jobsSort;
+    const params = new URLSearchParams({ token, page: String(page), sort });
     if (statusFilter) params.set("status", statusFilter);
     // Only apply the relevance floor on the unfiltered "All" view - if someone
     // explicitly filters by status (e.g. Skip), show everything regardless of score.
@@ -175,6 +178,11 @@ export default function Dashboard() {
     const next = !showLowScore;
     setShowLowScore(next);
     loadJobs(0, jobsStatusFilter, next);
+  }
+
+  function changeSort(sort) {
+    setJobsSort(sort);
+    loadJobs(0, jobsStatusFilter, undefined, sort);
   }
 
   async function setJobStatus(jobId, status, reason) {
@@ -783,11 +791,20 @@ export default function Dashboard() {
             <section className={styles.section}>
             <div className={styles.sectionHeadRow}>
               <h2>Jobs found ({jobsTotal})</h2>
-              {!jobsStatusFilter && (
-                <button type="button" onClick={toggleShowLowScore} className={styles.filterInactive}>
-                  {showLowScore ? "Hide low-relevance jobs" : "Show low-relevance jobs"}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => changeSort(jobsSort === "score" ? "date" : "score")}
+                  className={styles.filterInactive}
+                >
+                  Sort: {jobsSort === "score" ? "Best match" : "Newest first"}
                 </button>
-              )}
+                {!jobsStatusFilter && (
+                  <button type="button" onClick={toggleShowLowScore} className={styles.filterInactive}>
+                    {showLowScore ? "Hide low-relevance jobs" : "Show low-relevance jobs"}
+                  </button>
+                )}
+              </div>
             </div>
             {!jobsStatusFilter && !showLowScore && (
               <p className={styles.subtitle} style={{ marginTop: -4 }}>
@@ -941,9 +958,21 @@ export default function Dashboard() {
             </section>
 
             <section className={styles.section}>
-              <h2>Companies to watch</h2>
-              <ul className={styles.list}>
-                {companies.map((c) => (
+              <div className={styles.sectionHeadRow}>
+                <h2>Companies to watch ({companies.length})</h2>
+              </div>
+              {companies.length > 8 && (
+                <input
+                  placeholder="Filter by company name..."
+                  value={companyFilterText}
+                  onChange={(e) => setCompanyFilterText(e.target.value)}
+                  style={{ marginBottom: 12, width: "100%" }}
+                />
+              )}
+              <ul className={styles.list} style={{ maxHeight: 480, overflowY: "auto" }}>
+                {companies
+                  .filter((c) => c.name.toLowerCase().includes(companyFilterText.toLowerCase()))
+                  .map((c) => (
                   <li key={c.id} className={styles.listItem} style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
                       <span style={{ opacity: c.active ? 1 : 0.4 }}>
@@ -960,6 +989,20 @@ export default function Dashboard() {
                             style={{ marginLeft: 8, padding: "1px 7px", borderRadius: 6, fontSize: 11 }}
                           >
                             {c.detected_platform}
+                          </span>
+                        )}
+                        {c.source && c.source !== "manual" && (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              padding: "1px 7px",
+                              borderRadius: 6,
+                              fontSize: 11,
+                              background: "var(--neutral-soft)",
+                              color: "var(--neutral)",
+                            }}
+                          >
+                            {c.source === "seed" ? "seed" : "discovered"}
                           </span>
                         )}
                       </span>
@@ -995,9 +1038,10 @@ export default function Dashboard() {
                 <button type="submit">Add company</button>
               </form>
               <p className={styles.subtitle} style={{ marginTop: 12, marginBottom: 0 }}>
-                Works automatically for companies on Greenhouse (boards.greenhouse.io/...), Lever
-                (jobs.lever.co/...), or Attrax-powered career sites (e.g. careers.deliveryhero.com).
-                Other career pages aren't supported yet.
+                Works automatically for companies on Greenhouse, Lever, Ashby, SmartRecruiters,
+                Workable, or Attrax-powered career sites (e.g. careers.deliveryhero.com). Other
+                career pages aren't supported yet. New companies also get added automatically
+                when a job from one of them scores well - no need to add everything by hand.
               </p>
             </section>
           </>

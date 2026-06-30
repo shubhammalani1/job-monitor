@@ -69,8 +69,9 @@ def get_active_users(target_user_id: str | None = None) -> list[dict]:
 
 
 def get_active_phrases(user_id: str, phrase_ids: list[str] | None = None) -> list[dict]:
-    """Returns list of {id, phrase, location, times_run} dicts for this user's active
-    search phrases.
+    """Returns list of {id, phrase, location, times_run, run_times} dicts for this user's
+    active search phrases. run_times is None if the phrase uses the platform-wide default
+    schedule instead of its own.
 
     If phrase_ids is set, restricts to just those (used for targeted "run selected only"
     triggers) without touching the active flag in the database.
@@ -79,7 +80,7 @@ def get_active_phrases(user_id: str, phrase_ids: list[str] | None = None) -> lis
         supabase = get_supabase()
         query = (
             supabase.table("search_phrases")
-            .select("id, phrase, location, times_run")
+            .select("id, phrase, location, times_run, run_times")
             .eq("user_id", user_id)
             .eq("active", True)
         )
@@ -116,6 +117,28 @@ def get_active_companies(user_id: str, company_ids: list[str] | None = None) -> 
     except Exception as e:
         print(f"ERROR: failed to load active companies for user {user_id}: {e}")
         return []
+
+
+def get_recent_company_posting_count(company_id: str, days: int = 7) -> int:
+    """Counts how many jobs we've seen from this company in the last `days` days -
+    a cheap, honest 'is this company actively expanding right now' signal computed
+    from data we already have, rather than a paid funding/headcount-tracking feed."""
+    try:
+        import datetime
+
+        since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).isoformat()
+        supabase = get_supabase()
+        response = (
+            supabase.table("seen_jobs")
+            .select("id", count="exact")
+            .eq("company_id", company_id)
+            .gte("created_at", since)
+            .execute()
+        )
+        return response.count or 0
+    except Exception as e:
+        print(f"ERROR: failed to get recent posting count for company {company_id}: {e}")
+        return 0
 
 
 def mark_phrase_run(phrase_id: str, times_run: int) -> None:

@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const { data, error } = await supabase
         .from("companies")
-        .select("id, name, careers_url, active, notes, times_run, last_run_at, detected_platform, run_times")
+        .select("id, name, careers_url, active, notes, times_run, last_run_at, detected_platform, run_times, source, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
       if (error) throw error;

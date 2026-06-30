@@ -21,6 +21,16 @@ LOCATION_COUNTRY_KEYWORDS = {
     "sg": ["singapore"],
     "sa": ["saudi arabia", "riyadh", "jeddah"],
     "qa": ["qatar", "doha"],
+    "de": ["germany", "berlin", "munich", "deutschland"],
+    "fr": ["france", "paris"],
+    "nl": ["netherlands", "amsterdam", "the netherlands"],
+    "es": ["spain", "madrid", "barcelona"],
+    "ie": ["ireland", "dublin"],
+    "ch": ["switzerland", "zurich", "zug"],
+    "se": ["sweden", "stockholm"],
+    "pt": ["portugal", "lisbon"],
+    "it": ["italy", "milan", "rome"],
+    "pl": ["poland", "warsaw"],
 }
 
 
@@ -32,6 +42,10 @@ def _resolve_country_code(location: str) -> str | None:
         if any(keyword in location_lower for keyword in keywords):
             return code
     return None
+
+
+def _is_remote_location(location: str) -> bool:
+    return "remote" in (location or "").lower()
 
 
 def fetch_jobs_for_phrase(phrase: str, location: str, jsearch_api_key: str) -> list[dict]:
@@ -48,6 +62,12 @@ def fetch_jobs_for_phrase(phrase: str, location: str, jsearch_api_key: str) -> l
         country_code = _resolve_country_code(location)
         if country_code:
             params["country"] = country_code
+        elif _is_remote_location(location):
+            # Belt-and-suspenders alongside the "in Remote" query text - guarantees
+            # only actually-remote roles come back instead of relying purely on JSearch's
+            # text interpretation of the query (which, in testing, was usually but not
+            # always reliable on its own).
+            params["work_from_home"] = "true"
 
         headers = {"x-api-key": jsearch_api_key}
         response = requests.get(JSEARCH_URL, params=params, headers=headers, timeout=30)

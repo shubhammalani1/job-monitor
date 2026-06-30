@@ -3,7 +3,7 @@ import { getSupabaseAdmin, getUserByToken } from "../../lib/supabaseAdmin";
 const PAGE_SIZE = 25;
 
 export default async function handler(req, res) {
-  const { token, page, status, minScore } = req.query;
+  const { token, page, status, minScore, sort } = req.query;
   const user = await getUserByToken(token);
   if (!user) {
     return res.status(404).json({ error: "Invalid token" });
@@ -30,10 +30,13 @@ export default async function handler(req, res) {
       query = query.gte("claude_score", parseInt(minScore, 10) || 0);
     }
 
-    const { data, error, count } = await query
-      .order("claude_score", { ascending: false })
-      .order("created_at", { ascending: false })
-      .range(from, to);
+    if (sort === "date") {
+      query = query.order("created_at", { ascending: false });
+    } else {
+      query = query.order("claude_score", { ascending: false }).order("created_at", { ascending: false });
+    }
+
+    const { data, error, count } = await query.range(from, to);
 
     if (error) throw error;
 

@@ -15,16 +15,20 @@ from config import (
     increment_jsearch_usage,
     mark_phrase_run,
     mark_company_run,
+    get_recent_company_posting_count,
 )
 from fetch import fetch_jobs_for_phrase
-from careers import scrape_company_careers
+from careers import scrape_company_careers, discover_company_ats
+from sources import fetch_remoteok_jobs, fetch_wwr_jobs, fetch_hn_whos_hiring, matches_any_target_role
 from dedupe import filter_new_jobs, save_jobs
 from score import score_job
 from notify import send_slack_notification
 from feedback import get_feedback_examples
 from extract import enrich_description_if_thin
+from verify import filter_dead_links
 
 SCORE_THRESHOLD = 70
+AUTO_TRACK_SCORE_THRESHOLD = 65
 
 
 def create_run_log(user_id: str) -> str | None:
@@ -87,17 +91,22 @@ def run_for_user(
     companies_checked = 0
 
     try:
-        phrases = get_active_phrases(user_id, phrase_ids) if phrases_due else []
+        phrases = get_active_phrases(user_id, phrase_ids)
         companies = get_active_companies(user_id, company_ids)
-        print(
-            f"Loaded {len(phrases)} active phrases (phrases_due={phrases_due}), "
-            f"{len(companies)} active companies"
-        )
+        print(f"Loaded {len(phrases)} active phrases, {len(companies)} active companies")
 
         # Fetch phase
         all_jobs = []
+        target_roles = profile.get("target_roles") or []
 
         for phrase_row in phrases:
+            phrase_run_times = phrase_row.get("run_times")
+            phrase_due = is_on_demand or (
+                _is_scheduled_run_time(phrase_run_times) if phrase_run_times else phrases_due
+            )
+            if not phrase_due:
+                continue
+
             if jsearch_budget["remaining"] <= 0:
                 print(
                     f"WARNING: JSearch quota cap reached ({app_settings.get('jsearch_quota_limit')} "
@@ -126,12 +135,45 @@ def run_for_user(
             company_name = company_row.get("name")
             careers_url = company_row.get("careers_url")
             print(f"Checking careers page for: {company_name}")
-            jobs, detected_platform = scrape_company_careers(company_name, careers_url)
+            all_company_jobs, detected_platform = scrape_company_careers(company_name, careers_url)
+
+            # A company's careers feed returns every open role, not just ones relevant to
+            # this candidate - a 300-person AI company posts plenty of Sales/Finance/Eng
+            # roles alongside the rare PM one. Filtering by target_roles here (same as the
+            # aggregator sources) keeps us from spending a link-check, an enrich fetch, and
+            # a paid Claude call on hundreds of postings that were never going to be relevant.
+            jobs = (
+                [j for j in all_company_jobs if matches_any_target_role(j.get("title"), target_roles)]
+                if target_roles
+                else all_company_jobs
+            )
+            if len(all_company_jobs) != len(jobs):
+                print(
+                    f"{company_name}: {len(all_company_jobs)} open roles, "
+                    f"{len(jobs)} match target roles"
+                )
+
+            recent_activity = get_recent_company_posting_count(company_row.get("id")) if jobs else 0
             for job in jobs:
                 job["company_id"] = company_row.get("id")
+                job["company_hiring_signal"] = recent_activity
             all_jobs.extend(jobs)
             companies_checked += 1
             mark_company_run(company_row.get("id"), company_row.get("times_run") or 0, detected_platform)
+
+        # Aggregator sources - not tied to any phrase/company row, so they run once per
+        # user on the same schedule as phrases rather than per-phrase. No JSearch quota
+        # cost (separate free APIs), so they're not gated by jsearch_budget.
+        if phrases_due and target_roles:
+            for source_name, fetch_source in (
+                ("RemoteOK", fetch_remoteok_jobs),
+                ("We Work Remotely", fetch_wwr_jobs),
+                ("HN Who's Hiring", fetch_hn_whos_hiring),
+            ):
+                print(f"Checking aggregator source: {source_name}")
+                jobs = fetch_source(target_roles)
+                all_jobs.extend(jobs)
+                print(f"{source_name}: {len(jobs)} jobs matched target roles")
 
         total_found = len(all_jobs)
 
@@ -139,6 +181,11 @@ def run_for_user(
         new_jobs, dupes = filter_new_jobs(all_jobs, user_id)
         new_jobs_found = len(new_jobs)
         print(f"Found {total_found} jobs, {new_jobs_found} new, {dupes} already seen")
+
+        # Verify phase - drop dead/broken links before spending an enrich fetch or a
+        # scoring call on a posting the candidate can't actually open.
+        new_jobs, dead_links = filter_dead_links(new_jobs)
+        print(f"Link check: {len(new_jobs)} alive, {dead_links} dead/broken dropped")
 
         # Enrich phase - fetch full descriptions for jobs whose source only gave a thin one,
         # so scoring (and future feedback) works off real content, not a title alone.
@@ -157,7 +204,44 @@ def run_for_user(
             job["claude_score"] = result["score"]
             job["claude_reasoning"] = result["reasoning"]
             job["salary_likely_above_floor"] = result["salary_likely_above_floor"]
+            job["technical_match"] = result["technical_match"]
+            job["ai_relevance"] = result["ai_relevance"]
+            job["remote_fit"] = result["remote_fit"]
+            job["career_growth"] = result["career_growth"]
             print(f"Scored: {job.get('title')} at {job.get('company_name')} → {result['score']}/100")
+
+        # Auto-discovery phase - a job scoring well from an aggregator source (JSearch,
+        # RemoteOK, etc) proves that company is relevant. Probe its name directly against
+        # the supported ATS platforms; on a hit, start tracking its careers page going
+        # forward, so future runs catch roles that company never syndicates to aggregators
+        # at all. This is how the companies list grows - not by hand-picking guesses.
+        known_company_names = {(c.get("name") or "").lower() for c in companies}
+        for job in new_jobs:
+            if (job.get("claude_score") or 0) < AUTO_TRACK_SCORE_THRESHOLD:
+                continue
+            if job.get("company_id"):
+                continue  # already a directly-tracked company, nothing new to discover
+            company_name = job.get("company_name")
+            if not company_name or company_name.lower() in known_company_names:
+                continue
+            known_company_names.add(company_name.lower())  # don't re-probe twice in one run
+
+            discovered_url = discover_company_ats(company_name)
+            if not discovered_url:
+                continue
+            try:
+                get_supabase().table("companies").insert(
+                    {
+                        "user_id": user_id,
+                        "name": company_name,
+                        "careers_url": discovered_url,
+                        "active": True,
+                        "source": "auto-discovered",
+                    }
+                ).execute()
+                print(f"Auto-discovered direct careers page for '{company_name}': {discovered_url} - now tracking")
+            except Exception as e:
+                print(f"ERROR: failed to save auto-discovered company '{company_name}': {e}")
 
         # Notify phase
         notified_count = 0
